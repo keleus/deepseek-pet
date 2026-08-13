@@ -69,8 +69,14 @@ test('built dsh.client bundle registers an embedded shell overlay', async () => 
 
   const listSnapshot = {
     current: 'focus',
-    ids: ['focus'],
-    byId: { focus: { id: 'focus', displayTitle: '当前任务', running: false, updatedAt: 1 } },
+    ids: ['focus', 'one', 'two', 'three', 'four'],
+    byId: {
+      focus: { id: 'focus', displayTitle: '当前任务', running: false, updatedAt: 5 },
+      one: { id: 'one', displayTitle: '任务一', running: true, updatedAt: 4 },
+      two: { id: 'two', displayTitle: '任务二', running: true, updatedAt: 3 },
+      three: { id: 'three', displayTitle: '任务三', running: true, updatedAt: 2 },
+      four: { id: 'four', displayTitle: '任务四', running: true, updatedAt: 1 },
+    },
   }
   const html = renderToStaticMarkup(React.createElement(registered.Component, {
     useSessions: selector => selector(listSnapshot),
@@ -78,8 +84,10 @@ test('built dsh.client bundle registers an embedded shell overlay', async () => 
   }))
   assert.match(html, /DeepSeek 任务状态助手/)
   assert.match(html, /data-current="true"/)
-  assert.match(html, /查看上下文/)
-  assert.match(html, /查看今日消耗/)
+  assert.doesNotMatch(html, /查看上下文/)
+  assert.match(html, /收起 Pet/)
+  assert.doesNotMatch(html, /查看今日消耗/)
+  assert.match(html, /data-stacked="true"/)
   assert.doesNotMatch(html, /聚焦会话/)
   assert.doesNotMatch(html, /dsh-live2d-rig|dsh-live2d-part/)
 

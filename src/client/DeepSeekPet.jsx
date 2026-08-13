@@ -19,15 +19,12 @@ const ONE_HOUR = 60 * 60_000
 export function DeepSeekPet({ useSessions, resolveSession, openSession }) {
   const list = useSessions(value => value)
   const sessionId = list.current
-  const activeSessions = useMemo(() => {
-    const current = sessionId ? list.byId[sessionId] : undefined
-    const active = (list.ids ?? [])
+  const focusedSession = sessionId ? list.byId[sessionId] : undefined
+  const runningSessions = useMemo(() => (list.ids ?? [])
       .map(id => list.byId[id])
       .filter(item => item && item.id !== sessionId && (item.running || item.pendingInteraction))
-      .sort((a, b) => Number(b.running) - Number(a.running) || (b.updatedAt ?? 0) - (a.updatedAt ?? 0))
-    return current ? [current, ...active] : active
-  }, [list, sessionId])
-  const busySessions = activeSessions.filter(item => item.running).length
+      .sort((a, b) => Number(b.running) - Number(a.running) || (b.updatedAt ?? 0) - (a.updatedAt ?? 0)), [list, sessionId])
+  const busySessions = runningSessions.filter(item => item.running).length + Number(Boolean(focusedSession?.running))
   const session = useMemo(() => sessionId ? resolveSession(sessionId) : undefined, [resolveSession, sessionId])
   const subscribe = useCallback(listener => session?.subscribe(listener) ?? (() => {}), [session])
   const getSnapshot = useCallback(() => session?.getSnapshot() ?? EMPTY_SNAPSHOT, [session])
@@ -45,6 +42,8 @@ export function DeepSeekPet({ useSessions, resolveSession, openSession }) {
   const [offset, setOffset] = useState({ x: 0, y: 0 })
   const [tapText, setTapText] = useState('')
   const [tapDetail, setTapDetail] = useState('')
+  const [bubbleVisible, setBubbleVisible] = useState(true)
+  const [bubblePage, setBubblePage] = useState(0)
   const [activeReaction, setActiveReaction] = useState('idle')
   const [reactionPending, setReactionPending] = useState(false)
   const wasRunning = useRef(false)
@@ -52,7 +51,6 @@ export function DeepSeekPet({ useSessions, resolveSession, openSession }) {
   const humanTurnKey = useRef('')
   const drag = useRef(null)
   const dragged = useRef(false)
-  const streamRef = useRef(null)
   const speechTimer = useRef(null)
 
   useEffect(() => {
@@ -114,13 +112,9 @@ export function DeepSeekPet({ useSessions, resolveSession, openSession }) {
   const stream = streamFromSnapshot(snapshot)
   const streamText = stream.reply || stream.reasoning
   const streamMode = stream.reply ? '回复' : '思考'
-  useEffect(() => {
-    if (streamRef.current) streamRef.current.scrollTop = streamRef.current.scrollHeight
-  }, [streamText])
 
   const contextRatio = Number.isFinite(pressure?.projectedTokens) && Number.isFinite(pressure?.contextWindow)
     ? pressure.projectedTokens / pressure.contextWindow : 0
-  const todayUsage = useMemo(() => usageToday(list), [list])
   const hasImage = hasRecentImage(snapshot)
   const userCorrection = hasRecentCorrection(snapshot)
   const questionCount = reasoningQuestionCount(snapshot)
@@ -130,6 +124,20 @@ export function DeepSeekPet({ useSessions, resolveSession, openSession }) {
   const presentation = useMemo(() => presentationForState(effectiveVisual, phase, {
     busySessions, contextRatio, hasImage, idleMs, questionCount, thinkingMs, userCorrection,
   }), [effectiveVisual.kind, effectiveVisual.detail, phase, busySessions, contextRatio, hasImage, idleMs, questionCount, thinkingMs, userCorrection])
+
+  useEffect(() => {
+    setBubbleVisible(true)
+    if (taskActive) return () => {}
+    const timer = window.setTimeout(() => setBubbleVisible(false), 10_000)
+    return () => window.clearTimeout(timer)
+  }, [sessionId, taskActive, effectiveVisual.kind, effectiveVisual.label, tapText])
+
+  useEffect(() => {
+    setBubblePage(0)
+    if (!streamText) return () => {}
+    const timer = window.setInterval(() => setBubblePage(value => value + 1), 4500)
+    return () => window.clearInterval(timer)
+  }, [streamText])
 
   useEffect(() => {
     let timer
@@ -167,6 +175,7 @@ export function DeepSeekPet({ useSessions, resolveSession, openSession }) {
   }, [offset])
   const speak = useCallback((text, detail = '') => {
     window.clearTimeout(speechTimer.current)
+    setBubbleVisible(true)
     setTapText(text)
     setTapDetail(detail)
     speechTimer.current = window.setTimeout(() => { setTapText(''); setTapDetail('') }, 3600)
@@ -179,32 +188,19 @@ export function DeepSeekPet({ useSessions, resolveSession, openSession }) {
     speak(words[Math.floor(Math.random() * words.length)], '')
   }, [effectiveVisual.kind, speak])
 
-  const speakContext = useCallback(() => {
-    if (!pressure?.contextWindow) {
-      speak('现在还看不到上下文统计', '模型尚未上报上下文窗口')
-      return
-    }
-    const used = pressure.projectedTokens ?? pressure.pressureTokens ?? 0
-    speak(`当前上下文用了 ${Math.round(contextRatio * 100)}%`, `${formatTokens(used)} / ${formatTokens(pressure.contextWindow)} tokens`)
-  }, [contextRatio, pressure, speak])
-  const speakUsage = useCallback(() => {
-    if (todayUsage == null) speak('今天的消耗暂时没有统计', '有用量数据后我再告诉你')
-    else speak(`今天一共用了 ${formatTokens(todayUsage)} tokens`, '按今天有活动的会话累计')
-  }, [todayUsage, speak])
-
-  const hasConversation = Boolean(streamText || snapshot.pending?.length)
+  const hasConversation = Boolean(snapshot.pending?.length)
+  const showStream = Boolean(streamText && !tapText && bubblePage % 2 === 0)
+  const bubbleTitle = tapText || (showStream ? `${streamMode}中` : effectiveVisual.label)
+  const bubbleDetail = tapDetail || (showStream ? streamText : effectiveVisual.detail)
   return (
     <aside data-dsh-live2d-root data-collapsed={collapsed ? 'true' : 'false'} data-pet-state={effectiveVisual.kind}
       data-reaction-pending={reactionPending ? 'true' : 'false'} data-tapped={tapText ? 'true' : 'false'}
       style={{ '--pet-drag-x': `${offset.x}px`, '--pet-drag-y': `${offset.y}px` }} aria-label="DeepSeek 任务状态助手">
       <section className="dsh-live2d-conversation" data-visible={hasConversation ? 'true' : 'false'} aria-label="当前会话内容">
-        <div className="dsh-live2d-stream" data-visible={streamText ? 'true' : 'false'}>
-          <strong>{streamMode}中</strong><div ref={streamRef}>{streamText}</div>
-        </div>
         {snapshot.pending?.length > 0 && <PendingBubbles waits={snapshot.pending} />}
       </section>
-      <div className="dsh-live2d-bubble" role="status" aria-live="polite">
-        <span>{tapText || effectiveVisual.label}</span><small title={tapDetail || effectiveVisual.detail}>{tapDetail || effectiveVisual.detail}</small>
+      <div className="dsh-live2d-bubble" data-visible={bubbleVisible || taskActive || tapText ? 'true' : 'false'} data-stream={showStream ? 'true' : 'false'} role="status" aria-live="polite">
+        <span>{bubbleTitle}</span><small title={bubbleDetail}>{bubbleDetail}</small>
       </div>
       <div className="dsh-live2d-stage">
         <button className="dsh-live2d-character" type="button" aria-label={collapsed ? '展开 DeepSeek 状态助手' : '拖动或双击收起 DeepSeek 状态助手'}
@@ -214,17 +210,20 @@ export function DeepSeekPet({ useSessions, resolveSession, openSession }) {
             {Object.entries(REACTIONS).map(([name, src]) => <img key={name} src={src} alt="" draggable="false" data-active={name === activeReaction ? 'true' : 'false'} />)}
           </span>
         </button>
-        <nav className="dsh-live2d-tools" aria-label="Pet 快捷操作">
-          <button type="button" title="查看上下文" aria-label="查看上下文" onClick={speakContext}>◔</button>
-          <button type="button" title="查看今日消耗" aria-label="查看今日消耗" onClick={speakUsage}>∑</button>
-          <button type="button" title="收起 Pet" aria-label="收起 Pet" onClick={() => setCollapsed(true)}>×</button>
-        </nav>
       </div>
-      <section className="dsh-live2d-sessions" data-visible={activeSessions.length ? 'true' : 'false'} aria-label="活跃会话">
-        {activeSessions.slice(0, 8).map((item, index) => <button key={item.id} type="button" data-current={item.id === sessionId ? 'true' : 'false'} style={{ '--session-index': index }} onClick={() => openSession?.(item.id)}>
-          <i data-running={item.running ? 'true' : 'false'} /><span>{item.displayTitle || item.title || item.id}</span><small>{item.id === sessionId ? '聚焦' : item.pendingInteraction ? '等待' : '执行'}</small>
-        </button>)}
-        {activeSessions.length > 8 && <footer>+{activeSessions.length - 8}</footer>}
+      <nav className="dsh-live2d-tools" aria-label="Pet 快捷操作">
+        <button type="button" title="收起 Pet" aria-label="收起 Pet" onClick={() => setCollapsed(true)}><b>×</b><span>收起</span></button>
+      </nav>
+      <section className="dsh-live2d-sessions" data-visible={focusedSession || runningSessions.length ? 'true' : 'false'} aria-label="活跃会话">
+        {focusedSession && <button className="dsh-live2d-session-focus" type="button" data-current="true" onClick={() => openSession?.(focusedSession.id)}>
+          <i data-running={focusedSession.running ? 'true' : 'false'} /><span>{focusedSession.displayTitle || focusedSession.title || focusedSession.id}</span><small>聚焦</small>
+        </button>}
+        <div className="dsh-live2d-session-list" data-visible={runningSessions.length ? 'true' : 'false'}>
+          {runningSessions.slice(0, 7).map((item, index) => <button key={item.id} type="button" data-stacked={index >= 3 ? 'true' : 'false'} onClick={() => openSession?.(item.id)}>
+            <i data-running={item.running ? 'true' : 'false'} /><span>{item.displayTitle || item.title || item.id}</span><small>{item.pendingInteraction ? '等待操作' : '执行中'}</small>
+          </button>)}
+          {runningSessions.length > 7 && <footer>还有 {runningSessions.length - 7} 个会话</footer>}
+        </div>
       </section>
     </aside>
   )
@@ -289,21 +288,6 @@ function PendingBubbles({ waits }) {
 }
 
 function toggle(values = [], value) { return values.includes(value) ? values.filter(item => item !== value) : [...values, value] }
-function usageToday(list) {
-  const start = new Date(); start.setHours(0, 0, 0, 0)
-  let found = false; let total = 0
-  for (const id of list.ids ?? []) {
-    const item = list.byId[id]
-    if (!item || (item.updatedAt ?? 0) < start.getTime()) continue
-    const usage = item.projectionValues?.tokenUsage
-    if (!usage) continue
-    found = true
-    total += (usage.uncachedInputTokens ?? 0) + (usage.cacheReadTokens ?? 0) + (usage.cacheWriteTokens ?? 0) + (usage.outputTokens ?? 0)
-  }
-  return found ? total : null
-}
-function formatTokens(value) { return new Intl.NumberFormat('zh-CN', { notation: value >= 10_000 ? 'compact' : 'standard', maximumFractionDigits: 1 }).format(value) }
-
 function latestHumanTurnKey(snapshot) {
   const nodes = Array.isArray(snapshot?.nodes) ? snapshot.nodes : []
   const node = [...nodes].reverse().find(item => item?.kind === 'user' || item?.kind === 'steering')
