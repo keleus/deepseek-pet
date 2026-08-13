@@ -12,6 +12,7 @@ test('declares an installable dsh bundle for the web profile', () => {
 
   assert.equal(manifest.dsh.bundle.patch, './cordis.patch.yml')
   assert.ok(manifest.files.includes('cordis.patch.yml'))
+  assert.ok(manifest.files.includes('docs/deepseek-pet-preview.png'))
   assert.match(patch, /id: deepseek-pet/)
   assert.match(patch, /name: deepseek-pet/)
 })

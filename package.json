@@ -70,7 +70,8 @@
   "files": [
     "lib/index.js",
     "lib/client.js",
-    "cordis.patch.yml"
+    "cordis.patch.yml",
+    "docs/deepseek-pet-preview.png"
   ],
   "engines": {
     "node": ">=22.19"

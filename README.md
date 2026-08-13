@@ -6,6 +6,8 @@ DeepSeek Pet 是一个嵌入 DeepSeek Harness 网页的交互式桌宠插件。�
 
 角色使用完整表情图切换，不拆分头部、手脚或五官图层，避免部件错位和表情突变。
 
+<img src="./docs/deepseek-pet-preview.png" alt="DeepSeek Pet 网页内运行效果" width="560">
+
 ## 功能
 
 - 角色上方用与 Pet 等宽的气泡轮播状态短句，并以单行横向打字机效果跟随最新输出；无任务活动时 10 秒后自动隐藏；
