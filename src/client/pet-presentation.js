@@ -22,7 +22,7 @@ export function presentationForState(visual, phase = 0, signals = {}) {
   if (visual.kind === 'working') return result(reactionForTool(visual.detail))
   if (visual.kind === 'listening') return result('skeptical')
   if (visual.kind === 'thinking') return result('thinking')
-  if (visual.kind === 'speaking') return result('cheerful')
+  if (visual.kind === 'speaking') return result(['desk-coding', 'thinking', 'skeptical'][phase % 3])
   if (visual.kind === 'confused') return result('desk-confused')
   return result('idle')
 }
@@ -41,4 +41,23 @@ function reactionForTool(detail) {
 
 function result(reaction) {
   return { expression: reaction, reaction }
+}
+
+export function latestOutput(text, limit = 180) {
+  const normalized = String(text ?? '').replace(/\s+/gu, ' ').trim()
+  if (normalized.length <= limit) return normalized
+  const tail = normalized.slice(-limit)
+  const boundary = tail.search(/[。！？.!?；;]\s*/u)
+  return (boundary >= 0 ? tail.slice(boundary + 1) : tail).trimStart()
+}
+
+export function clampPetScale(current, deltaY) {
+  return Math.max(.65, Math.min(1.4, Math.round((current - deltaY * .0012) * 100) / 100))
+}
+
+export function rotatingActivityLabel(mode, phase, questionCount = 0, thinkingMs = 0) {
+  if (mode === '回复') return ['正在敲字', '整理回复', '组织答案'][phase % 3]
+  if (questionCount >= 4) return ['梳理疑问', '逐项排查', '验证线索'][phase % 3]
+  if (thinkingMs >= 12_000) return ['深度思考', '消化上下文', '继续推演'][phase % 3]
+  return ['分析中', '梳理上下文', '验证思路'][phase % 3]
 }

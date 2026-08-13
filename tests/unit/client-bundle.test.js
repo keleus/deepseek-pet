@@ -85,7 +85,7 @@ test('built dsh.client bundle registers an embedded shell overlay', async () => 
   assert.match(html, /DeepSeek 任务状态助手/)
   assert.match(html, /data-current="true"/)
   assert.doesNotMatch(html, /查看上下文/)
-  assert.match(html, /收起 Pet/)
+  assert.match(html, /最小化 Pet/)
   assert.doesNotMatch(html, /查看今日消耗/)
   assert.match(html, /data-stacked="true"/)
   assert.doesNotMatch(html, /聚焦会话/)

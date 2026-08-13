@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { REACTIONS } from './assets.generated.js'
-import { presentationForState } from './pet-presentation.js'
+import { clampPetScale, latestOutput, presentationForState, rotatingActivityLabel } from './pet-presentation.js'
 import {
   completionState, hasRecentCorrection, hasRecentImage, reasoningQuestionCount,
   stateFromSnapshot, streamFromSnapshot,
@@ -12,6 +12,7 @@ const EMPTY_SNAPSHOT = Object.freeze({
 })
 const EMPTY_PRESSURE = Object.freeze({})
 const POSITION_KEY = 'deepseek-pet:position'
+const SCALE_KEY = 'deepseek-pet:scale'
 const TEN_MINUTES = 10 * 60_000
 const THIRTY_MINUTES = 30 * 60_000
 const ONE_HOUR = 60 * 60_000
@@ -40,6 +41,7 @@ export function DeepSeekPet({ useSessions, resolveSession, openSession }) {
   const [thinkingMs, setThinkingMs] = useState(0)
   const [idleMs, setIdleMs] = useState(0)
   const [offset, setOffset] = useState({ x: 0, y: 0 })
+  const [scale, setScale] = useState(1)
   const [tapText, setTapText] = useState('')
   const [tapDetail, setTapDetail] = useState('')
   const [bubbleVisible, setBubbleVisible] = useState(true)
@@ -52,6 +54,10 @@ export function DeepSeekPet({ useSessions, resolveSession, openSession }) {
   const drag = useRef(null)
   const dragged = useRef(false)
   const speechTimer = useRef(null)
+  const streamLineRef = useRef(null)
+  const typedStreamRef = useRef('')
+  const streamTargetRef = useRef('')
+  const reactionChangedAt = useRef(0)
 
   useEffect(() => {
     let transitionTimer
@@ -59,7 +65,7 @@ export function DeepSeekPet({ useSessions, resolveSession, openSession }) {
     const commit = next => setVisual(current => sameVisual(current, next) ? current : next)
     if (snapshot.running) {
       wasRunning.current = true
-      transitionTimer = window.setTimeout(() => commit(immediate), immediate.kind === 'error' ? 0 : 180)
+      transitionTimer = window.setTimeout(() => commit(immediate), immediate.kind === 'error' ? 100 : 720)
     } else if (wasRunning.current) {
       wasRunning.current = false
       if (immediate.kind === 'error' || immediate.kind === 'tool-error') commit(immediate)
@@ -67,13 +73,13 @@ export function DeepSeekPet({ useSessions, resolveSession, openSession }) {
         commit(completionState())
         completionTimer = window.setTimeout(() => commit(immediate), 4800)
       }
-    } else transitionTimer = window.setTimeout(() => commit(immediate), immediate.kind === 'error' ? 0 : 180)
+    } else transitionTimer = window.setTimeout(() => commit(immediate), immediate.kind === 'error' ? 100 : 720)
     return () => { window.clearTimeout(transitionTimer); window.clearTimeout(completionTimer) }
   }, [immediate.kind, immediate.label, immediate.detail, snapshot.running])
 
   useEffect(() => {
     setPhase(0)
-    const interval = window.setInterval(() => setPhase(value => value + 1), 6800)
+    const interval = window.setInterval(() => setPhase(value => value + 1), 12_000)
     return () => window.clearInterval(interval)
   }, [visual.kind, visual.detail])
 
@@ -106,12 +112,47 @@ export function DeepSeekPet({ useSessions, resolveSession, openSession }) {
     try {
       const saved = JSON.parse(window.localStorage?.getItem(POSITION_KEY) ?? 'null')
       if (Number.isFinite(saved?.x) && Number.isFinite(saved?.y)) setOffset(saved)
+      const savedScale = Number(window.localStorage?.getItem(SCALE_KEY))
+      if (Number.isFinite(savedScale) && savedScale >= .65 && savedScale <= 1.4) setScale(savedScale)
     } catch {}
   }, [])
 
   const stream = streamFromSnapshot(snapshot)
   const streamText = stream.reply || stream.reasoning
   const streamMode = stream.reply ? '回复' : '思考'
+  const hasStream = Boolean(streamText)
+  const streamTarget = useMemo(() => latestOutput(streamText), [streamText])
+  const [typedStream, setTypedStream] = useState('')
+
+  useEffect(() => {
+    streamTargetRef.current = streamTarget
+    if (!streamTarget) {
+      typedStreamRef.current = ''
+      setTypedStream('')
+    } else if (!streamTarget.startsWith(typedStreamRef.current)) {
+      const cursor = sharedPrefixLength(typedStreamRef.current, streamTarget)
+      typedStreamRef.current = streamTarget.slice(0, cursor)
+      setTypedStream(typedStreamRef.current)
+    }
+  }, [streamTarget])
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      const target = streamTargetRef.current
+      const current = typedStreamRef.current
+      if (!target || current === target) return
+      if (!target.startsWith(current)) {
+        typedStreamRef.current = target.slice(0, sharedPrefixLength(current, target))
+      }
+      typedStreamRef.current = target.slice(0, Math.min(target.length, typedStreamRef.current.length + 2))
+      setTypedStream(typedStreamRef.current)
+    }, 28)
+    return () => window.clearInterval(timer)
+  }, [])
+
+  useEffect(() => {
+    if (streamLineRef.current) streamLineRef.current.scrollLeft = streamLineRef.current.scrollWidth
+  }, [typedStream])
 
   const contextRatio = Number.isFinite(pressure?.projectedTokens) && Number.isFinite(pressure?.contextWindow)
     ? pressure.projectedTokens / pressure.contextWindow : 0
@@ -134,18 +175,27 @@ export function DeepSeekPet({ useSessions, resolveSession, openSession }) {
 
   useEffect(() => {
     setBubblePage(0)
-    if (!streamText) return () => {}
+    if (!hasStream) return () => {}
     const timer = window.setInterval(() => setBubblePage(value => value + 1), 4500)
     return () => window.clearInterval(timer)
-  }, [streamText])
+  }, [hasStream])
 
   useEffect(() => {
-    let timer
+    let prepareTimer
+    let swapTimer
     if (presentation.reaction !== activeReaction) {
-      setReactionPending(true)
-      timer = window.setTimeout(() => { setActiveReaction(presentation.reaction); setReactionPending(false) }, 240)
+      const elapsed = Date.now() - reactionChangedAt.current
+      const wait = reactionChangedAt.current ? Math.max(0, 4_800 - elapsed) : 0
+      prepareTimer = window.setTimeout(() => {
+        setReactionPending(true)
+        swapTimer = window.setTimeout(() => {
+          reactionChangedAt.current = Date.now()
+          setActiveReaction(presentation.reaction)
+          setReactionPending(false)
+        }, 520)
+      }, wait)
     }
-    return () => window.clearTimeout(timer)
+    return () => { window.clearTimeout(prepareTimer); window.clearTimeout(swapTimer) }
   }, [presentation.reaction, activeReaction])
 
   const updateLook = useCallback(event => {
@@ -173,6 +223,16 @@ export function DeepSeekPet({ useSessions, resolveSession, openSession }) {
     drag.current = null
     if (dragged.current) { try { window.localStorage?.setItem(POSITION_KEY, JSON.stringify(offset)) } catch {} }
   }, [offset])
+  const wheelScale = useCallback(event => {
+    if (collapsed) return
+    event.preventDefault()
+    event.stopPropagation()
+    setScale(current => {
+      const next = clampPetScale(current, event.deltaY)
+      try { window.localStorage?.setItem(SCALE_KEY, String(next)) } catch {}
+      return next
+    })
+  }, [collapsed])
   const speak = useCallback((text, detail = '') => {
     window.clearTimeout(speechTimer.current)
     setBubbleVisible(true)
@@ -190,29 +250,30 @@ export function DeepSeekPet({ useSessions, resolveSession, openSession }) {
 
   const hasConversation = Boolean(snapshot.pending?.length)
   const showStream = Boolean(streamText && !tapText && bubblePage % 2 === 0)
-  const bubbleTitle = tapText || (showStream ? `${streamMode}中` : effectiveVisual.label)
-  const bubbleDetail = tapDetail || (showStream ? streamText : effectiveVisual.detail)
+  const activityLabel = rotatingActivityLabel(streamMode, phase, questionCount, thinkingMs)
+  const bubbleTitle = tapText || (showStream ? activityLabel : effectiveVisual.label)
+  const bubbleDetail = tapDetail || (showStream ? typedStream : effectiveVisual.detail)
   return (
     <aside data-dsh-live2d-root data-collapsed={collapsed ? 'true' : 'false'} data-pet-state={effectiveVisual.kind}
       data-reaction-pending={reactionPending ? 'true' : 'false'} data-tapped={tapText ? 'true' : 'false'}
-      style={{ '--pet-drag-x': `${offset.x}px`, '--pet-drag-y': `${offset.y}px` }} aria-label="DeepSeek 任务状态助手">
+      style={{ '--pet-drag-x': `${offset.x}px`, '--pet-drag-y': `${offset.y}px`, '--pet-scale': scale }} aria-label="DeepSeek 任务状态助手">
       <section className="dsh-live2d-conversation" data-visible={hasConversation ? 'true' : 'false'} aria-label="当前会话内容">
         {snapshot.pending?.length > 0 && <PendingBubbles waits={snapshot.pending} />}
       </section>
       <div className="dsh-live2d-bubble" data-visible={bubbleVisible || taskActive || tapText ? 'true' : 'false'} data-stream={showStream ? 'true' : 'false'} role="status" aria-live="polite">
-        <span>{bubbleTitle}</span><small title={bubbleDetail}>{bubbleDetail}</small>
+        <span>{bubbleTitle}</span><small ref={streamLineRef} title={showStream ? streamTarget : bubbleDetail}>{bubbleDetail}{showStream && <i aria-hidden="true" />}</small>
       </div>
       <div className="dsh-live2d-stage">
         <button className="dsh-live2d-character" type="button" aria-label={collapsed ? '展开 DeepSeek 状态助手' : '拖动或双击收起 DeepSeek 状态助手'}
           onClick={tap} onDoubleClick={() => setCollapsed(value => !value)} onPointerDown={pointerDown}
-          onPointerMove={pointerMove} onPointerUp={pointerUp} onPointerCancel={pointerUp}>
+          onPointerMove={pointerMove} onPointerUp={pointerUp} onPointerCancel={pointerUp} onWheel={wheelScale}>
           <span className="dsh-live2d-sprites" aria-hidden="true">
-            {Object.entries(REACTIONS).map(([name, src]) => <img key={name} src={src} alt="" draggable="false" data-active={name === activeReaction ? 'true' : 'false'} />)}
+            {Object.entries(REACTIONS).map(([name, src]) => <img key={name} src={src} alt="" draggable="false" data-active={name === (collapsed ? 'idle' : activeReaction) ? 'true' : 'false'} />)}
           </span>
         </button>
       </div>
       <nav className="dsh-live2d-tools" aria-label="Pet 快捷操作">
-        <button type="button" title="收起 Pet" aria-label="收起 Pet" onClick={() => setCollapsed(true)}><b>×</b><span>收起</span></button>
+        <button type="button" title="最小化 Pet" aria-label="最小化 Pet" onClick={() => setCollapsed(true)}><b>−</b><span>最小化</span></button>
       </nav>
       <section className="dsh-live2d-sessions" data-visible={focusedSession || runningSessions.length ? 'true' : 'false'} aria-label="活跃会话">
         {focusedSession && <button className="dsh-live2d-session-focus" type="button" data-current="true" onClick={() => openSession?.(focusedSession.id)}>
@@ -288,6 +349,11 @@ function PendingBubbles({ waits }) {
 }
 
 function toggle(values = [], value) { return values.includes(value) ? values.filter(item => item !== value) : [...values, value] }
+function sharedPrefixLength(left, right) {
+  let index = 0
+  while (index < left.length && index < right.length && left[index] === right[index]) index += 1
+  return index
+}
 function latestHumanTurnKey(snapshot) {
   const nodes = Array.isArray(snapshot?.nodes) ? snapshot.nodes : []
   const node = [...nodes].reverse().find(item => item?.kind === 'user' || item?.kind === 'steering')
