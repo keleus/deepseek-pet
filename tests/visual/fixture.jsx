@@ -9,10 +9,15 @@ let snapshot = {
 }
 let pressure = {}
 let listSnapshot = {
-  current: 'fixture', ids: ['fixture', 'review', 'research'], byId: {
+  current: 'fixture', ids: ['fixture', 'review', 'research', 'tests', 'docs', 'api', 'release', 'audit'], byId: {
     fixture: { id: 'fixture', displayTitle: '修复登录页错误', running: false, updatedAt: Date.now() },
     review: { id: 'review', displayTitle: '代码审查', running: true, updatedAt: Date.now() - 1000 },
     research: { id: 'research', displayTitle: '查找鉴权资料', running: true, updatedAt: Date.now() - 2000 },
+    tests: { id: 'tests', displayTitle: '回归测试', running: true, updatedAt: Date.now() - 3000 },
+    docs: { id: 'docs', displayTitle: '更新文档', running: true, updatedAt: Date.now() - 4000 },
+    api: { id: 'api', displayTitle: '检查接口', running: true, updatedAt: Date.now() - 5000 },
+    release: { id: 'release', displayTitle: '发布准备', running: true, updatedAt: Date.now() - 6000 },
+    audit: { id: 'audit', displayTitle: '安全审计', running: true, updatedAt: Date.now() - 7000 },
   },
 }
 const listeners = new Set()

@@ -67,13 +67,20 @@ test('built dsh.client bundle registers an embedded shell overlay', async () => 
   assert.equal(registered.options.id, 'deepseek-pet')
   assert.equal(styles.length, 1)
 
-  const listSnapshot = { current: undefined, byId: {} }
+  const listSnapshot = {
+    current: 'focus',
+    ids: ['focus'],
+    byId: { focus: { id: 'focus', displayTitle: '当前任务', running: false, updatedAt: 1 } },
+  }
   const html = renderToStaticMarkup(React.createElement(registered.Component, {
     useSessions: selector => selector(listSnapshot),
     ...registered.business,
   }))
   assert.match(html, /DeepSeek 任务状态助手/)
-  assert.match(html, /聚焦会话/)
+  assert.match(html, /data-current="true"/)
+  assert.match(html, /查看上下文/)
+  assert.match(html, /查看今日消耗/)
+  assert.doesNotMatch(html, /聚焦会话/)
   assert.doesNotMatch(html, /dsh-live2d-rig|dsh-live2d-part/)
 
   for (const cleanup of cleanups.reverse()) cleanup()
