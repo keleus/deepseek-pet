@@ -94,7 +94,9 @@ def is_magenta(pixel: tuple[int, int, int, int]) -> bool:
 
 def is_white(pixel: tuple[int, int, int, int]) -> bool:
     red, green, blue, alpha = pixel
-    return alpha == 0 or (min(red, green, blue) >= 224 and max(red, green, blue) - min(red, green, blue) <= 28)
+    # Generated sources use a nearly-white studio backdrop. Keep the flood fill
+    # connected to the canvas edge so outlined white costume details stay intact.
+    return alpha == 0 or (min(red, green, blue) >= 180 and max(red, green, blue) - min(red, green, blue) <= 44)
 
 
 def save_square(image: Image.Image, target: Path, size: int = 512, *, trim: bool = False) -> None:

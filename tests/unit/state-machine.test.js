@@ -17,8 +17,8 @@ test('maps tool activity and streaming output', () => {
 })
 
 test('maps interaction waits and queue depth', () => {
-  assert.equal(stateFromSnapshot({ openState: 'open', pending: [{}] }).kind, 'listening')
-  assert.equal(stateFromSnapshot({ openState: 'open', running: true, pending: [{ kind: 'approval' }] }).kind, 'approval')
+  assert.equal(stateFromSnapshot({ openState: 'open', pending: [{}] }).kind, 'waiting')
+  assert.equal(stateFromSnapshot({ openState: 'open', running: true, pending: [{ kind: 'approval' }] }).kind, 'waiting')
   assert.equal(stateFromSnapshot({ openState: 'open', queue: [{}, {}] }).label, '队列中还有 2 项')
 })
 

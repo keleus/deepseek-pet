@@ -79,6 +79,17 @@ test('built dsh.client bundle registers an embedded shell overlay', async () => 
       four: { id: 'four', displayTitle: '任务四', running: true, updatedAt: 1 },
     },
   }
+  const sessionSnapshot = {
+    openState: 'open', running: false, runningCalls: [], partial: null, queue: [], nodes: [],
+    pending: [{ kind: 'question', key: 'question-1', payload: { questions: [{ id: 'choice', question: '请选择下一步' }] } }],
+  }
+  ctx.sessions.binding = () => ({
+    session: {
+      subscribe() { return () => {} },
+      getSnapshot() { return sessionSnapshot },
+      projections: { faceOf() { return undefined } },
+    },
+  })
   const html = renderToStaticMarkup(React.createElement(registered.Component, {
     useSessions: selector => selector(listSnapshot),
     ...registered.business,
@@ -91,6 +102,8 @@ test('built dsh.client bundle registers an embedded shell overlay', async () => 
   assert.match(html, /data-stacked="true"/)
   assert.doesNotMatch(html, /聚焦会话/)
   assert.doesNotMatch(html, /dsh-live2d-rig|dsh-live2d-part/)
+  assert.match(html, /等待你的回答/)
+  assert.doesNotMatch(html, /dsh-live2d-pending|<fieldset|请选择下一步|>提交</)
 
   for (const cleanup of cleanups.reverse()) cleanup()
   delete globalThis.window

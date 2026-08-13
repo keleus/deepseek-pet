@@ -1,9 +1,10 @@
 /** Select one complete emoji sprite. Motion is applied to the whole sprite in CSS. */
 export function presentationForState(visual, phase = 0, signals = {}) {
+  if (visual.kind === 'waiting') return waitingReaction(phase, signals.waitingMs ?? 0)
   if (signals.hasImage || visual.kind === 'vision') return result('blindfold')
   if (signals.userCorrection || visual.kind === 'apology') return result('apologetic')
-  if (visual.kind === 'tool-error') return result('desk-facepalm')
-  if (visual.kind === 'approval') return result('shocked')
+  if (visual.kind === 'tool-error') return result((signals.visualMs ?? 0) < 3000 ? 'shocked' : 'desk-facepalm')
+  if (visual.kind === 'approval') return waitingReaction(phase, signals.waitingMs ?? 0)
   if (signals.busySessions >= 3 || visual.kind === 'busy') return result('desk-coding')
   if (signals.contextRatio >= 0.82 || visual.kind === 'full') return result('satiated')
   if (signals.contextRatio >= 0.62 || visual.kind === 'context-snack') return result('deepseek-rice')
@@ -11,20 +12,36 @@ export function presentationForState(visual, phase = 0, signals = {}) {
   if (visual.kind === 'sleepy' || signals.idleMs >= 30 * 60_000) return result('pillow')
   if (visual.kind === 'hungry' || signals.idleMs >= 10 * 60_000) return result('hungry')
   if (visual.kind === 'thinking' && signals.questionCount >= 4) {
-    return result(signals.questionCount >= 7 ? 'deepseek-pressure' : 'desk-confused')
+    return result(signals.questionCount >= 7 ? 'deepseek-pressure' : ['desk-confused', 'thinking'][phase % 2])
   }
-  if (visual.kind === 'thinking' && signals.thinkingMs >= 12000) {
-    return result(signals.thinkingMs < 30000 ? 'deepseek-rice' : 'deepseek-pressure')
+  if (visual.kind === 'thinking') {
+    if ((signals.thinkingMs ?? 0) < 12_000) return result('thinking')
+    if (signals.thinkingMs < 45_000) return result(['desk-coding', 'relaxed', 'thinking'][(Math.max(1, phase) - 1) % 3])
+    return result(['desk-confused', 'desk-coding', 'deepseek-pressure'][phase % 3])
   }
 
-  if (visual.kind === 'success') return result(['desk-done', 'cheerful', 'proud'][phase % 3])
+  if (visual.kind === 'success') {
+    const elapsed = signals.visualMs ?? 0
+    return result(elapsed < 2500 ? 'desk-done' : elapsed < 5200 ? 'cheerful' : 'proud')
+  }
   if (visual.kind === 'error') return result(['apologetic', 'crying', 'desk-facepalm'][phase % 3])
   if (visual.kind === 'working') return result(reactionForTool(visual.detail))
   if (visual.kind === 'listening') return result('skeptical')
   if (visual.kind === 'thinking') return result('thinking')
   if (visual.kind === 'speaking') return result(['desk-coding', 'thinking', 'skeptical'][phase % 3])
   if (visual.kind === 'confused') return result('desk-confused')
+  if (visual.kind === 'idle') {
+    if ((signals.idleMs ?? 0) >= 2 * 60_000) return result(['relaxed', 'skeptical', 'thinking'][phase % 3])
+    return result(['idle', 'cheerful', 'relaxed', 'proud'][phase % 4])
+  }
   return result('idle')
+}
+
+function waitingReaction(phase, waitingMs) {
+  if (waitingMs >= 4 * 60_000) return result('sleepy')
+  if (waitingMs >= 2 * 60_000) return result('angry')
+  if (waitingMs >= 45_000) return result('skeptical')
+  return result(['relaxed', 'skeptical', 'thinking'][phase % 3])
 }
 
 function reactionForTool(detail) {
@@ -32,11 +49,11 @@ function reactionForTool(detail) {
   if (tool.includes('subagent') || tool.includes('spawn_agent') || tool.includes('create_thread')) return 'desk-coding'
   if (tool.includes('web') || tool.includes('search') || tool.includes('browser')) return 'skeptical'
   if (tool === 'read' || tool.includes('fetch')) return 'thinking'
-  if (tool.includes('image') || tool.includes('draw')) return 'deepseek-rice'
+  if (tool.includes('image') || tool.includes('draw')) return 'thinking'
   if (tool.includes('patch') || tool.includes('edit') || tool.includes('write') || tool.includes('bash') || tool.includes('exec')) {
     return 'desk-coding'
   }
-  return 'angry'
+  return 'desk-coding'
 }
 
 function result(reaction) {

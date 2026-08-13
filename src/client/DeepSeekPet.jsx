@@ -13,6 +13,7 @@ const EMPTY_SNAPSHOT = Object.freeze({
 const EMPTY_PRESSURE = Object.freeze({})
 const POSITION_KEY = 'deepseek-pet:position'
 const SCALE_KEY = 'deepseek-pet:scale'
+const LAST_ACTIVITY_KEY = 'deepseek-pet:last-activity'
 const TEN_MINUTES = 10 * 60_000
 const THIRTY_MINUTES = 30 * 60_000
 const ONE_HOUR = 60 * 60_000
@@ -35,21 +36,39 @@ export function DeepSeekPet({ useSessions, resolveSession, openSession }) {
   const getPressure = useCallback(() => pressureFace?.getSnapshot() ?? EMPTY_PRESSURE, [pressureFace])
   const pressure = useSyncExternalStore(subscribePressure, getPressure, getPressure)
   const immediate = stateFromSnapshot(session ? snapshot : null)
+  const taskActive = Boolean(snapshot.running || snapshot.runningCalls?.length || snapshot.partial || snapshot.pending?.length || snapshot.queue?.length)
+  const contextRatio = Number.isFinite(pressure?.projectedTokens) && Number.isFinite(pressure?.contextWindow)
+    ? pressure.projectedTokens / pressure.contextWindow : 0
+  const hasImage = hasRecentImage(snapshot)
+  const userCorrection = hasRecentCorrection(snapshot)
+  const questionCount = reasoningQuestionCount(snapshot)
+  const initialIdleMsRef = useRef(null)
+  if (initialIdleMsRef.current === null) initialIdleMsRef.current = taskActive ? 0 : inactiveDuration()
+  const initialEffective = deriveVisual(immediate, {
+    busySessions, contextRatio, hasImage, idleMs: initialIdleMsRef.current,
+    questionCount, taskActive, userCorrection, waitingMs: 0,
+  })
   const [visual, setVisual] = useState(immediate)
   const [collapsed, setCollapsed] = useState(false)
   const [phase, setPhase] = useState(0)
   const [thinkingMs, setThinkingMs] = useState(0)
-  const [idleMs, setIdleMs] = useState(0)
+  const [visualMs, setVisualMs] = useState(0)
+  const [waitingMs, setWaitingMs] = useState(0)
+  const [idleMs, setIdleMs] = useState(initialIdleMsRef.current)
   const [offset, setOffset] = useState({ x: 0, y: 0 })
   const [scale, setScale] = useState(1)
   const [tapText, setTapText] = useState('')
   const [tapDetail, setTapDetail] = useState('')
   const [bubbleVisible, setBubbleVisible] = useState(true)
   const [bubblePage, setBubblePage] = useState(0)
-  const [activeReaction, setActiveReaction] = useState('idle')
+  const [activeReaction, setActiveReaction] = useState(() => presentationForState(initialEffective, 0, {
+    idleMs: initialIdleMsRef.current, visualMs: 0, waitingMs: 0,
+  }).reaction)
   const [reactionPending, setReactionPending] = useState(false)
   const wasRunning = useRef(false)
-  const idleStarted = useRef(Date.now())
+  const wasTaskActive = useRef(taskActive)
+  const idleStarted = useRef(Date.now() - initialIdleMsRef.current)
+  const waitingStarted = useRef(0)
   const humanTurnKey = useRef('')
   const drag = useRef(null)
   const dragged = useRef(false)
@@ -68,10 +87,10 @@ export function DeepSeekPet({ useSessions, resolveSession, openSession }) {
       transitionTimer = window.setTimeout(() => commit(immediate), immediate.kind === 'error' ? 100 : 720)
     } else if (wasRunning.current) {
       wasRunning.current = false
-      if (immediate.kind === 'error' || immediate.kind === 'tool-error') commit(immediate)
+      if (immediate.kind !== 'idle') commit(immediate)
       else {
         commit(completionState())
-        completionTimer = window.setTimeout(() => commit(immediate), 4800)
+        completionTimer = window.setTimeout(() => commit(immediate), 8000)
       }
     } else transitionTimer = window.setTimeout(() => commit(immediate), immediate.kind === 'error' ? 100 : 720)
     return () => { window.clearTimeout(transitionTimer); window.clearTimeout(completionTimer) }
@@ -84,11 +103,28 @@ export function DeepSeekPet({ useSessions, resolveSession, openSession }) {
   }, [visual.kind, visual.detail])
 
   useEffect(() => {
+    const started = Date.now()
+    setVisualMs(0)
+    const interval = window.setInterval(() => setVisualMs(Date.now() - started), 250)
+    return () => window.clearInterval(interval)
+  }, [visual.kind, visual.detail])
+
+  useEffect(() => {
     if (visual.kind !== 'thinking') { setThinkingMs(0); return () => {} }
     const started = Date.now()
     const interval = window.setInterval(() => setThinkingMs(Date.now() - started), 1000)
     return () => window.clearInterval(interval)
   }, [visual.kind])
+
+  const waiting = Boolean(snapshot.pending?.length)
+  useEffect(() => {
+    if (!waiting) { waitingStarted.current = 0; setWaitingMs(0); return () => {} }
+    waitingStarted.current = Date.now()
+    const update = () => setWaitingMs(Date.now() - waitingStarted.current)
+    update()
+    const interval = window.setInterval(update, 1000)
+    return () => window.clearInterval(interval)
+  }, [waiting, sessionId])
 
   const latestHuman = latestHumanTurnKey(snapshot)
   useEffect(() => {
@@ -96,12 +132,21 @@ export function DeepSeekPet({ useSessions, resolveSession, openSession }) {
       humanTurnKey.current = latestHuman
       idleStarted.current = Date.now()
       setIdleMs(0)
+      rememberActivity()
     }
   }, [latestHuman])
 
-  const taskActive = Boolean(snapshot.running || snapshot.runningCalls?.length || snapshot.partial || snapshot.pending?.length || snapshot.queue?.length)
   useEffect(() => {
-    if (taskActive) { idleStarted.current = Date.now(); setIdleMs(0); return () => {} }
+    if (taskActive || wasTaskActive.current) {
+      idleStarted.current = Date.now()
+      setIdleMs(0)
+      rememberActivity()
+    }
+    wasTaskActive.current = taskActive
+    if (taskActive) {
+      const interval = window.setInterval(rememberActivity, 30_000)
+      return () => window.clearInterval(interval)
+    }
     const update = () => setIdleMs(Date.now() - idleStarted.current)
     update()
     const interval = window.setInterval(update, 15_000)
@@ -154,17 +199,12 @@ export function DeepSeekPet({ useSessions, resolveSession, openSession }) {
     if (streamLineRef.current) streamLineRef.current.scrollLeft = streamLineRef.current.scrollWidth
   }, [typedStream])
 
-  const contextRatio = Number.isFinite(pressure?.projectedTokens) && Number.isFinite(pressure?.contextWindow)
-    ? pressure.projectedTokens / pressure.contextWindow : 0
-  const hasImage = hasRecentImage(snapshot)
-  const userCorrection = hasRecentCorrection(snapshot)
-  const questionCount = reasoningQuestionCount(snapshot)
   const effectiveVisual = deriveVisual(visual, {
-    busySessions, contextRatio, hasImage, idleMs, questionCount, taskActive, userCorrection,
+    busySessions, contextRatio, hasImage, idleMs, questionCount, taskActive, userCorrection, waitingMs,
   })
   const presentation = useMemo(() => presentationForState(effectiveVisual, phase, {
-    busySessions, contextRatio, hasImage, idleMs, questionCount, thinkingMs, userCorrection,
-  }), [effectiveVisual.kind, effectiveVisual.detail, phase, busySessions, contextRatio, hasImage, idleMs, questionCount, thinkingMs, userCorrection])
+    busySessions, contextRatio, hasImage, idleMs, questionCount, thinkingMs, userCorrection, visualMs, waitingMs,
+  }), [effectiveVisual.kind, effectiveVisual.detail, phase, busySessions, contextRatio, hasImage, idleMs, questionCount, thinkingMs, userCorrection, visualMs, waitingMs])
 
   useEffect(() => {
     setBubbleVisible(true)
@@ -185,7 +225,8 @@ export function DeepSeekPet({ useSessions, resolveSession, openSession }) {
     let swapTimer
     if (presentation.reaction !== activeReaction) {
       const elapsed = Date.now() - reactionChangedAt.current
-      const wait = reactionChangedAt.current ? Math.max(0, 4_800 - elapsed) : 0
+      const urgent = effectiveVisual.kind === 'success' || effectiveVisual.kind === 'tool-error'
+      const wait = urgent || !reactionChangedAt.current ? 0 : Math.max(0, 4_800 - elapsed)
       prepareTimer = window.setTimeout(() => {
         setReactionPending(true)
         swapTimer = window.setTimeout(() => {
@@ -196,7 +237,7 @@ export function DeepSeekPet({ useSessions, resolveSession, openSession }) {
       }, wait)
     }
     return () => { window.clearTimeout(prepareTimer); window.clearTimeout(swapTimer) }
-  }, [presentation.reaction, activeReaction])
+  }, [presentation.reaction, activeReaction, effectiveVisual.kind])
 
   const updateLook = useCallback(event => {
     const rect = event.currentTarget.getBoundingClientRect()
@@ -248,7 +289,6 @@ export function DeepSeekPet({ useSessions, resolveSession, openSession }) {
     speak(words[Math.floor(Math.random() * words.length)], '')
   }, [effectiveVisual.kind, speak])
 
-  const hasConversation = Boolean(snapshot.pending?.length)
   const showStream = Boolean(streamText && !tapText && bubblePage % 2 === 0)
   const activityLabel = rotatingActivityLabel(streamMode, phase, questionCount, thinkingMs)
   const bubbleTitle = tapText || (showStream ? activityLabel : effectiveVisual.label)
@@ -257,9 +297,6 @@ export function DeepSeekPet({ useSessions, resolveSession, openSession }) {
     <aside data-dsh-live2d-root data-collapsed={collapsed ? 'true' : 'false'} data-pet-state={effectiveVisual.kind}
       data-reaction-pending={reactionPending ? 'true' : 'false'} data-tapped={tapText ? 'true' : 'false'}
       style={{ '--pet-drag-x': `${offset.x}px`, '--pet-drag-y': `${offset.y}px`, '--pet-scale': scale }} aria-label="DeepSeek 任务状态助手">
-      <section className="dsh-live2d-conversation" data-visible={hasConversation ? 'true' : 'false'} aria-label="当前会话内容">
-        {snapshot.pending?.length > 0 && <PendingBubbles waits={snapshot.pending} />}
-      </section>
       <div className="dsh-live2d-bubble" data-visible={bubbleVisible || taskActive || tapText ? 'true' : 'false'} data-stream={showStream ? 'true' : 'false'} role="status" aria-live="polite">
         <span>{bubbleTitle}</span><small ref={streamLineRef} title={showStream ? streamTarget : bubbleDetail}>{bubbleDetail}{showStream && <i aria-hidden="true" />}</small>
       </div>
@@ -291,19 +328,26 @@ export function DeepSeekPet({ useSessions, resolveSession, openSession }) {
 }
 
 export function deriveVisual(visual, signals) {
+  if (visual.kind === 'waiting' || visual.kind === 'approval') {
+    const waitingMs = signals.waitingMs ?? 0
+    if (waitingMs >= 4 * 60_000) return { kind: 'waiting', label: '等着等着犯困了', detail: '请在任务中回答，我还在等你' }
+    if (waitingMs >= 2 * 60_000) return { kind: 'waiting', label: '等得有点生气了', detail: '任务里的问题还没有回答' }
+    if (waitingMs >= 45_000) return { kind: 'waiting', label: '还在等你呢', detail: '请回到任务中完成回答' }
+    return { kind: 'waiting', label: visual.label, detail: visual.detail }
+  }
+  if (visual.kind === 'error' || visual.kind === 'tool-error' || visual.kind === 'success') return visual
   if (signals.hasImage) return { kind: 'vision', label: '图片暂时看不见', detail: 'DeepSeek 当前不支持视觉输入' }
   if (signals.userCorrection) return { kind: 'apology', label: '对不起，我重新检查', detail: '收到你的纠正反馈' }
-  if (visual.kind === 'error' || visual.kind === 'tool-error' || visual.kind === 'approval') return visual
   if (signals.busySessions >= 3) return { kind: 'busy', label: '好多会话，忙疯了', detail: `${signals.busySessions} 个任务同时执行` }
   if (signals.contextRatio >= .82) return { kind: 'full', label: '上下文吃饱了', detail: `${Math.round(signals.contextRatio * 100)}% context` }
   if (signals.contextRatio >= .62) return { kind: 'context-snack', label: '还可以再吃一点', detail: `${Math.round(signals.contextRatio * 100)}% context` }
   if (visual.kind === 'thinking' && signals.questionCount >= 4) return { kind: 'confused', label: '疑问有点多，让我理一理', detail: `${signals.questionCount} 个疑问线索` }
-  if (!signals.taskActive && signals.idleMs >= ONE_HOUR) return { kind: 'sleeping', label: '已经睡着了', detail: '挂机超过 1 小时' }
-  if (!signals.taskActive && signals.idleMs >= THIRTY_MINUTES) return { kind: 'sleepy', label: '抱着枕头犯困', detail: '挂机超过 30 分钟' }
-  if (!signals.taskActive && signals.idleMs >= TEN_MINUTES) return { kind: 'hungry', label: '肚子饿了', detail: '挂机超过 10 分钟' }
   if (!signals.taskActive) {
     const greeting = greetingForHour(new Date().getHours())
     if (greeting.kind !== 'idle') return greeting
+    if (signals.idleMs >= ONE_HOUR) return { kind: 'sleeping', label: '已经睡着了', detail: '挂机超过 1 小时' }
+    if (signals.idleMs >= THIRTY_MINUTES) return { kind: 'sleepy', label: '抱着枕头犯困', detail: '挂机超过 30 分钟' }
+    if (signals.idleMs >= TEN_MINUTES) return { kind: 'hungry', label: '肚子饿了', detail: '挂机超过 10 分钟' }
     return { ...visual, label: greeting.label, detail: greeting.detail }
   }
   return visual
@@ -318,37 +362,6 @@ export function greetingForHour(hour) {
   return { kind: 'idle', label: '晚上好', detail: '今天也辛苦啦' }
 }
 
-function PendingBubbles({ waits }) {
-  const [answers, setAnswers] = useState({})
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState('')
-  const respond = async (wait, value) => {
-    setBusy(true); setError('')
-    try {
-      const receipt = await wait.respond(value)
-      if (!receipt?.accepted) throw new Error(receipt?.reason || '响应未被接受')
-    } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); setBusy(false) }
-  }
-  return <div className="dsh-live2d-pending">
-    {waits.map(wait => wait.kind === 'approval' ? <article key={wait.key}>
-      <strong>{wait.payload?.reason || `允许调用 ${wait.payload?.toolName || '工具'}？`}</strong>
-      <small>{wait.payload?.toolName}</small>
-      <div><button disabled={busy} onClick={() => respond(wait, { ok: true, value: { sessionId: wait.sessionId, approvalId: wait.payload.approvalId, outcome: 'rejected' } })}>拒绝</button>
-        <button disabled={busy} data-primary onClick={() => respond(wait, { ok: true, value: { sessionId: wait.sessionId, approvalId: wait.payload.approvalId, outcome: 'allowed-once' } })}>允许一次</button></div>
-    </article> : <article key={wait.key}>
-      {(wait.payload?.questions ?? []).map(question => <fieldset key={question.id}>
-        <legend>{question.question}</legend>{question.detail && <small>{question.detail}</small>}
-        <div>{(question.options ?? []).map(option => <button key={option.label} disabled={busy} data-selected={(answers[question.id]?.selected ?? []).includes(option.label)} onClick={() => setAnswers(current => ({ ...current, [question.id]: { selected: question.multiSelect ? toggle(current[question.id]?.selected, option.label) : [option.label] } }))}>{option.label}</button>)}</div>
-        <input value={answers[question.id]?.custom ?? ''} placeholder="输入调整或自定义回答" onChange={event => setAnswers(current => ({ ...current, [question.id]: { selected: [], custom: event.target.value } }))} />
-      </fieldset>)}
-      <div><button disabled={busy} onClick={() => respond(wait, { ok: false, error: { code: 'cancelled', message: 'the user rejected this question request', details: {} } })}>拒绝</button>
-        <button disabled={busy} data-primary onClick={() => respond(wait, { ok: true, value: { sessionId: wait.sessionId, answer: { answers: (wait.payload?.questions ?? []).map(question => ({ id: question.id, selected: answers[question.id]?.custom?.trim() ? [] : answers[question.id]?.selected ?? [], ...(answers[question.id]?.custom?.trim() ? { custom: answers[question.id].custom.trim() } : {}) })) } } })}>提交</button></div>
-    </article>)}
-    {error && <p>{error}</p>}
-  </div>
-}
-
-function toggle(values = [], value) { return values.includes(value) ? values.filter(item => item !== value) : [...values, value] }
 function sharedPrefixLength(left, right) {
   let index = 0
   while (index < left.length && index < right.length && left[index] === right[index]) index += 1
@@ -363,7 +376,21 @@ function sameVisual(left, right) { return left.kind === right.kind && left.label
 function tapTextFor(kind) {
   if (kind === 'sleeping') return ['嘘……睡着啦', '再睡五分钟……']
   if (kind === 'hungry') return ['可以投喂一碗白饭吗？', '肚子咕咕叫了']
+  if (kind === 'waiting') return ['我会在这里等你', '请在任务里回答问题哦']
   if (kind === 'approval') return ['点一下同意我才能继续～']
   if (kind === 'tool-error' || kind === 'error') return ['我会重新收拾残局的！', '这次真的搞砸了……']
   return ['别戳啦～', '我在看当前会话呢', '可以拖我换个位置']
+}
+
+function inactiveDuration(now = Date.now()) {
+  try {
+    const stored = Number(window.localStorage?.getItem(LAST_ACTIVITY_KEY))
+    if (Number.isFinite(stored) && stored > 0) return Math.max(0, now - stored)
+    window.localStorage?.setItem(LAST_ACTIVITY_KEY, String(now))
+  } catch {}
+  return 0
+}
+
+function rememberActivity(now = Date.now()) {
+  try { window.localStorage?.setItem(LAST_ACTIVITY_KEY, String(now)) } catch {}
 }

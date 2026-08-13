@@ -1,6 +1,7 @@
 export const PET_STATES = Object.freeze([
   'idle',
   'listening',
+  'waiting',
   'thinking',
   'working',
   'speaking',
@@ -45,15 +46,15 @@ export function stateFromSnapshot(snapshot) {
   const failedTool = recentToolFailure(snapshot)
   if (failedTool) return state('tool-error', '工具调用搞砸了', failedTool)
 
-  if (hasRecentImage(snapshot)) {
-    return state('vision', '图片暂时看不见', 'DeepSeek 当前不支持视觉输入')
-  }
-
   const pending = Array.isArray(snapshot.pending) ? snapshot.pending : []
   if (pending.length > 0) {
     const kind = pending[0]?.kind
-    if (kind === 'approval') return state('approval', '等你同意工具调用', '确认后我再继续')
-    return state('listening', '等待你的操作', kind === 'question' ? '有一个问题需要回答' : '有一项交互需要确认')
+    if (kind === 'approval') return state('waiting', '等你确认工具调用', '请在任务中确认，我会在这里等你')
+    return state('waiting', '等待你的回答', kind === 'question' ? '请在任务中回答问题' : '请在任务中完成交互')
+  }
+
+  if (hasRecentImage(snapshot)) {
+    return state('vision', '图片暂时看不见', 'DeepSeek 当前不支持视觉输入')
   }
 
   const calls = Array.isArray(snapshot.runningCalls) ? snapshot.runningCalls : []
