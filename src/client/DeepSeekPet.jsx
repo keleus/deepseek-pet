@@ -342,8 +342,8 @@ export function DeepSeekPet({ useSessions, resolveSession, openSession }) {
         <span>{bubbleTitle}</span><small ref={streamLineRef} title={showStream ? streamTarget : bubbleDetail}>{bubbleDetail}{showStream && <i aria-hidden="true" />}</small>
       </div>
       <div className="dsh-live2d-stage">
-        <button className="dsh-live2d-character" type="button" aria-label={collapsed ? '展开 DeepSeek 状态助手' : '拖动或双击收起 DeepSeek 状态助手'}
-          onClick={tap} onDoubleClick={() => setCollapsed(value => !value)} onPointerDown={pointerDown}
+        <button className="dsh-live2d-character" type="button" aria-label={collapsed ? '双击展开 DeepSeek 状态助手' : '拖动 DeepSeek 状态助手'}
+          onClick={tap} onDoubleClick={() => { if (collapsed) setCollapsed(false) }} onPointerDown={pointerDown}
           onPointerMove={pointerMove} onPointerUp={pointerUp} onPointerCancel={pointerUp} onWheel={wheelScale}>
           <span className="dsh-live2d-sprites" aria-hidden="true">
             {Object.entries(REACTIONS).map(([name, src]) => <img key={name} src={src} alt="" draggable="false" data-active={name === (collapsed ? 'idle' : activeReaction) ? 'true' : 'false'} />)}
