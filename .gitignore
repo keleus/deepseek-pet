@@ -1,0 +1,28 @@
+# Dependencies
+node_modules/
+
+# Build and test output that is not distributed
+dist/
+coverage/
+tests/visual/*.bundle.js
+
+# Python helper caches and local environments
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Logs and local environment files
+*.log
+npm-debug.log*
+pnpm-debug.log*
+.env
+.env.*
+!.env.example
+
+# Editor and operating-system files
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*~
