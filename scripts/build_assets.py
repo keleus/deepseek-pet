@@ -31,6 +31,12 @@ REACTIONS = (
     "deepseek-pressure",
 )
 
+REACTION_FRAMES = {
+    "idle-blink": "black",
+    "desk-coding-hands-up": "white",
+    "thinking-keypress": "white",
+}
+
 
 def connected_background(image: Image.Image, predicate, *, despill_magenta: bool = False) -> Image.Image:
     image = image.convert("RGBA")
@@ -97,6 +103,11 @@ def is_white(pixel: tuple[int, int, int, int]) -> bool:
     # Generated sources use a nearly-white studio backdrop. Keep the flood fill
     # connected to the canvas edge so outlined white costume details stay intact.
     return alpha == 0 or (min(red, green, blue) >= 180 and max(red, green, blue) - min(red, green, blue) <= 44)
+
+
+def is_black(pixel: tuple[int, int, int, int]) -> bool:
+    red, green, blue, alpha = pixel
+    return alpha == 0 or max(red, green, blue) <= 10
 
 
 def save_square(image: Image.Image, target: Path, size: int = 512, *, trim: bool = False) -> None:
@@ -174,6 +185,12 @@ def build_reactions() -> None:
         image = connected_background(image, is_magenta, despill_magenta=True)
         prefix = "decoration" if name == "seal" else "reaction"
         save_square(image, OUTPUT / f"{prefix}-{name}.webp", size=420, trim=True)
+
+    frame_root = PUBLIC / "reaction-frames-source"
+    predicates = {"white": is_white, "black": is_black}
+    for name, background in REACTION_FRAMES.items():
+        image = connected_background(Image.open(frame_root / f"{name}.png"), predicates[background])
+        save_square(image, OUTPUT / f"frame-{name}.webp", size=420, trim=True)
 
 
 def main() -> None:

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
-import { REACTIONS } from './assets.generated.js'
+import { REACTIONS, REACTION_FRAMES } from './assets.generated.js'
 import { clampPetScale, latestOutput, presentationForState, rotatingActivityLabel } from './pet-presentation.js'
 import {
   completionState, hasRecentCorrection, hasRecentImage, reasoningQuestionCount,
@@ -17,6 +17,11 @@ const LAST_ACTIVITY_KEY = 'deepseek-pet:last-activity'
 const TEN_MINUTES = 10 * 60_000
 const THIRTY_MINUTES = 30 * 60_000
 const ONE_HOUR = 60 * 60_000
+const FRAME_FOR_REACTION = Object.freeze({
+  idle: 'idle-blink',
+  'desk-coding': 'desk-coding-hands-up',
+  thinking: 'thinking-keypress',
+})
 
 export function DeepSeekPet({ useSessions, resolveSession, openSession }) {
   const list = useSessions(value => value)
@@ -64,6 +69,7 @@ export function DeepSeekPet({ useSessions, resolveSession, openSession }) {
   const [activeReaction, setActiveReaction] = useState(() => presentationForState(initialEffective, 0, {
     idleMs: initialIdleMsRef.current, visualMs: 0, waitingMs: 0,
   }).reaction)
+  const [activeFrame, setActiveFrame] = useState('')
   const [reactionPending, setReactionPending] = useState(false)
   const wasRunning = useRef(false)
   const wasTaskActive = useRef(taskActive)
@@ -239,6 +245,40 @@ export function DeepSeekPet({ useSessions, resolveSession, openSession }) {
     return () => { window.clearTimeout(prepareTimer); window.clearTimeout(swapTimer) }
   }, [presentation.reaction, activeReaction, effectiveVisual.kind])
 
+  useEffect(() => {
+    setActiveFrame('')
+    const frame = FRAME_FOR_REACTION[activeReaction]
+    if (!frame || collapsed || window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return () => {}
+
+    if (activeReaction === 'idle') {
+      let stopped = false
+      let showTimer
+      let hideTimer
+      const scheduleBlink = () => {
+        showTimer = window.setTimeout(() => {
+          if (stopped) return
+          setActiveFrame(frame)
+          hideTimer = window.setTimeout(() => {
+            setActiveFrame('')
+            if (!stopped) scheduleBlink()
+          }, 170)
+        }, 4200)
+      }
+      scheduleBlink()
+      return () => {
+        stopped = true
+        window.clearTimeout(showTimer)
+        window.clearTimeout(hideTimer)
+      }
+    }
+
+    const intervalMs = activeReaction === 'desk-coding' ? 520 : 1400
+    const interval = window.setInterval(() => {
+      setActiveFrame(current => current === frame ? '' : frame)
+    }, intervalMs)
+    return () => window.clearInterval(interval)
+  }, [activeReaction, collapsed])
+
   const updateLook = useCallback(event => {
     const rect = event.currentTarget.getBoundingClientRect()
     event.currentTarget.style.setProperty('--look-x', Math.max(-1, Math.min(1, (event.clientX - rect.left) / rect.width * 2 - 1)).toFixed(3))
@@ -293,6 +333,7 @@ export function DeepSeekPet({ useSessions, resolveSession, openSession }) {
   const activityLabel = rotatingActivityLabel(streamMode, phase, questionCount, thinkingMs)
   const bubbleTitle = tapText || (showStream ? activityLabel : effectiveVisual.label)
   const bubbleDetail = tapDetail || (showStream ? typedStream : effectiveVisual.detail)
+  const visibleFrame = !collapsed && FRAME_FOR_REACTION[activeReaction] === activeFrame ? activeFrame : ''
   return (
     <aside data-dsh-live2d-root data-collapsed={collapsed ? 'true' : 'false'} data-pet-state={effectiveVisual.kind}
       data-reaction-pending={reactionPending ? 'true' : 'false'} data-tapped={tapText ? 'true' : 'false'}
@@ -306,6 +347,7 @@ export function DeepSeekPet({ useSessions, resolveSession, openSession }) {
           onPointerMove={pointerMove} onPointerUp={pointerUp} onPointerCancel={pointerUp} onWheel={wheelScale}>
           <span className="dsh-live2d-sprites" aria-hidden="true">
             {Object.entries(REACTIONS).map(([name, src]) => <img key={name} src={src} alt="" draggable="false" data-active={name === (collapsed ? 'idle' : activeReaction) ? 'true' : 'false'} />)}
+            {Object.entries(REACTION_FRAMES).map(([name, src]) => <img key={name} src={src} alt="" draggable="false" data-frame="true" data-active={name === visibleFrame ? 'true' : 'false'} />)}
           </span>
         </button>
       </div>

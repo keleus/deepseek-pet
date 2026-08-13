@@ -11,6 +11,11 @@ const groups = {
     'thinking', 'relaxed', 'desk-confused', 'desk-coding', 'desk-done', 'desk-facepalm',
     'deepseek-rice', 'deepseek-pressure', 'blindfold', 'satiated', 'hungry', 'pillow', 'sleeping',
   ].map(name => [name, name === 'idle' ? 'deepseek-idle' : `reaction-${name}`])),
+  REACTION_FRAMES: {
+    'idle-blink': 'frame-idle-blink',
+    'desk-coding-hands-up': 'frame-desk-coding-hands-up',
+    'thinking-keypress': 'frame-thinking-keypress',
+  },
   DECORATIONS: { seal: 'decoration-seal' },
 }
 
