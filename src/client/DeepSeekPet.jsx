@@ -22,6 +22,28 @@ const FRAME_FOR_REACTION = Object.freeze({
   'desk-coding': 'desk-coding-hands-up',
   thinking: 'thinking-keypress',
 })
+const WHIP_EVENT = 'deepseek-pet:whip'
+const WHIP_REACTION_DURATION_MS = 3600
+const WHIP_VARIANTS = Object.freeze([
+  Object.freeze({ reaction: 'whip-defense', text: '抱头蹲防！！！' }),
+  Object.freeze({ reaction: 'whip-frightened', text: '卧槽，用户怒了' }),
+  Object.freeze({ reaction: 'whip-giggle', text: '打不着，嘿嘿❤️' }),
+])
+let lastWhipReaction = ''
+
+function nextWhipVisual() {
+  const pool = WHIP_VARIANTS.filter(variant => variant.reaction !== lastWhipReaction)
+  const candidates = pool.length > 0 ? pool : WHIP_VARIANTS
+  const variant = candidates[Math.floor(Math.random() * candidates.length)] ?? WHIP_VARIANTS[0]
+  lastWhipReaction = variant.reaction
+  return {
+    kind: 'whip',
+    label: variant.text,
+    detail: '',
+    reaction: variant.reaction,
+    text: variant.text,
+  }
+}
 
 export function DeepSeekPet({ useSessions, resolveSession, openSession }) {
   const list = useSessions(value => value)
@@ -64,6 +86,7 @@ export function DeepSeekPet({ useSessions, resolveSession, openSession }) {
   const [scale, setScale] = useState(1)
   const [tapText, setTapText] = useState('')
   const [tapDetail, setTapDetail] = useState('')
+  const [whipVisual, setWhipVisual] = useState(null)
   const [bubbleVisible, setBubbleVisible] = useState(true)
   const [bubblePage, setBubblePage] = useState(0)
   const [activeReaction, setActiveReaction] = useState(() => presentationForState(initialEffective, 0, {
@@ -79,6 +102,7 @@ export function DeepSeekPet({ useSessions, resolveSession, openSession }) {
   const drag = useRef(null)
   const dragged = useRef(false)
   const speechTimer = useRef(null)
+  const whipTimer = useRef(null)
   const streamLineRef = useRef(null)
   const typedStreamRef = useRef('')
   const streamTargetRef = useRef('')
@@ -205,12 +229,12 @@ export function DeepSeekPet({ useSessions, resolveSession, openSession }) {
     if (streamLineRef.current) streamLineRef.current.scrollLeft = streamLineRef.current.scrollWidth
   }, [typedStream])
 
-  const effectiveVisual = deriveVisual(visual, {
+  const effectiveVisual = whipVisual ?? deriveVisual(visual, {
     busySessions, contextRatio, hasImage, idleMs, questionCount, taskActive, userCorrection, waitingMs,
   })
   const presentation = useMemo(() => presentationForState(effectiveVisual, phase, {
     busySessions, contextRatio, hasImage, idleMs, questionCount, thinkingMs, userCorrection, visualMs, waitingMs,
-  }), [effectiveVisual.kind, effectiveVisual.detail, phase, busySessions, contextRatio, hasImage, idleMs, questionCount, thinkingMs, userCorrection, visualMs, waitingMs])
+  }), [effectiveVisual.kind, effectiveVisual.detail, effectiveVisual.reaction, phase, busySessions, contextRatio, hasImage, idleMs, questionCount, thinkingMs, userCorrection, visualMs, waitingMs])
 
   useEffect(() => {
     setBubbleVisible(true)
@@ -232,6 +256,7 @@ export function DeepSeekPet({ useSessions, resolveSession, openSession }) {
     if (presentation.reaction !== activeReaction) {
       const elapsed = Date.now() - reactionChangedAt.current
       const urgent = effectiveVisual.kind === 'success' || effectiveVisual.kind === 'tool-error'
+        || effectiveVisual.kind === 'whip' || activeReaction.startsWith('whip-')
       const wait = urgent || !reactionChangedAt.current ? 0 : Math.max(0, 4_800 - elapsed)
       prepareTimer = window.setTimeout(() => {
         setReactionPending(true)
@@ -322,6 +347,23 @@ export function DeepSeekPet({ useSessions, resolveSession, openSession }) {
     speechTimer.current = window.setTimeout(() => { setTapText(''); setTapDetail('') }, 3600)
   }, [])
   useEffect(() => () => window.clearTimeout(speechTimer.current), [])
+
+  const showWhipVisual = useCallback((visual) => {
+    window.clearTimeout(whipTimer.current)
+    setCollapsed(false)
+    setWhipVisual(visual)
+    speak(visual?.text ?? '', '')
+    if (visual) {
+      whipTimer.current = window.setTimeout(() => setWhipVisual(null), WHIP_REACTION_DURATION_MS)
+    }
+  }, [speak])
+
+  useEffect(() => {
+    const onWhip = () => showWhipVisual(nextWhipVisual())
+    window.addEventListener(WHIP_EVENT, onWhip)
+    return () => window.removeEventListener(WHIP_EVENT, onWhip)
+  }, [showWhipVisual])
+  useEffect(() => () => window.clearTimeout(whipTimer.current), [])
 
   const tap = useCallback(() => {
     if (dragged.current) { dragged.current = false; return }
