@@ -37,6 +37,13 @@ REACTION_FRAMES = {
     "thinking-keypress": "white",
 }
 
+# Sources already carry a real alpha channel, so they skip background removal.
+NATIVE_ALPHA_REACTIONS = (
+    "whip-defense",
+    "whip-frightened",
+    "whip-giggle",
+)
+
 
 def connected_background(image: Image.Image, predicate, *, despill_magenta: bool = False) -> Image.Image:
     image = image.convert("RGBA")
@@ -172,6 +179,10 @@ def build_reactions() -> None:
     source_root = PUBLIC / "reactions-source"
     for name in REACTIONS:
         image = connected_background(Image.open(source_root / f"{name}.png"), is_white)
+        save_square(image, OUTPUT / f"reaction-{name}.webp", size=420, trim=True)
+
+    for name in NATIVE_ALPHA_REACTIONS:
+        image = Image.open(source_root / f"{name}.png").convert("RGBA")
         save_square(image, OUTPUT / f"reaction-{name}.webp", size=420, trim=True)
 
     semantic = Image.open(PUBLIC / "deepseek-semantic-reactions-source.png").convert("RGBA")
