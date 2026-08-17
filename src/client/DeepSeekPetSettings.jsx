@@ -1,10 +1,10 @@
 /**
  * 桌宠设置 — the DeepSeek Pet page inside the dsh settings panel
  * (`settings.section`). One dropdown drives the shared display-mode store
- * (`pet-display.js`): 默认 / 页面置顶 / 浏览器置顶. Changes apply
- * immediately — the pet surface and this page subscribe to the same store.
- * Styling follows the page's design system (inherited panel font and the
- * `--dsw-alias-*` tokens used by the other settings sections).
+ * (`pet-display.js`): 默认 / 页面置顶. Changes apply immediately — the pet
+ * surface and this page subscribe to the same store. Styling follows the
+ * page's design system (inherited panel font and the `--dsw-alias-*` tokens
+ * used by the other settings sections).
  */
 
 import { useSyncExternalStore } from 'react'
@@ -39,13 +39,6 @@ export function DeepSeekPetSettings() {
       </label>
 
       <p className="dsh-live2d-settings-detail" data-mode={mode}>{current.description}</p>
-
-      {mode === 'browser-top' && (
-        <p className="dsh-live2d-settings-hint">
-          浏览器置顶为页面内全局置顶：不新开窗口或标签页，自动适配所有浏览器；
-          切换浏览器标签页时，桌宠随当前页面显示。
-        </p>
-      )}
     </div>
   )
 }

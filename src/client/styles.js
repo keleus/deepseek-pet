@@ -27,9 +27,6 @@ export const STYLES = `
 /* 展示模式：页面置顶 — 视口固定 + 页面内顶层（通过 body 传送门渲染，
    脱离 shell.overlay 的堆叠上下文，悬浮在页面内容与弹窗之上） */
 [data-dsh-live2d-root][data-display-mode="page-top"]{position:fixed;z-index:999999}
-/* 展示模式：浏览器置顶 — 视口固定 + 页面最高层级（同样通过 body 传送门渲染，
-   盖过一切页面元素；不新开窗口，自动适配所有浏览器） */
-[data-dsh-live2d-root][data-display-mode="browser-top"]{position:fixed;z-index:2147483000}
 /* 设置面板：桌宠设置（settings.section 注册页）— 跟随页面设计系统：
    继承面板字体，使用 --dsw-alias-* 令牌与设置页控件样式（Models/General 同款） */
 .dsh-live2d-settings{display:flex;flex-direction:column;gap:12px;min-width:0;max-width:620px}
@@ -41,7 +38,6 @@ export const STYLES = `
 .dsh-live2d-settings-select:hover{border-color:var(--dsw-alias-brand-primary,#4d6bfe)}
 .dsh-live2d-settings-select:focus{outline:none;border-color:var(--dsw-alias-brand-primary,#4d6bfe)}
 .dsh-live2d-settings-detail{margin:0;padding:10px 12px;border:1px solid var(--dsw-alias-border-l1,rgba(140,140,140,.28));border-radius:10px;background:var(--dsw-alias-bg-layer-1,transparent);color:var(--dsw-alias-label-secondary,rgba(128,128,128,.95));font-size:13px;line-height:1.6}
-.dsh-live2d-settings-hint{margin:0;color:var(--dsw-alias-label-tertiary,rgba(128,128,128,.7));font-size:12px;line-height:1.6}
 `
 
 /**

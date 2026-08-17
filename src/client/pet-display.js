@@ -1,20 +1,13 @@
 /**
  * Shared display-mode store for the DeepSeek Pet surface.
  *
- * One setting, three placements (all in-page — no window or tab is ever
+ * One setting, two placements (all in-page — no window or tab is ever
  * opened, so the behavior adapts to every browser identically):
- *  - `default`     — the pet renders where it always has (inside the shell
- *                    overlay layer, absolute at the frame's bottom-right).
- *  - `page-top`    — the pet is portaled to `document.body` with a viewport
- *                    fixed position, floating above the page's content and
- *                    dialogs.
- *  - `browser-top` — browser-wide top placement: the pet is portaled to
- *                    `document.body` with the maximum possible z-index, so it
- *                    stays above everything the page can render. The mode and
- *                    position persist across tabs and reloads of the same
- *                    browser profile (shared localStorage); the pet itself
- *                    follows the page it lives on, as web pages cannot paint
- *                    across browser tabs.
+ *  - `default`  — the pet renders where it always has (inside the shell
+ *                 overlay layer, absolute at the frame's bottom-right).
+ *  - `page-top` — the pet is portaled to `document.body` with a viewport
+ *                 fixed position, floating above the page's content and
+ *                 dialogs.
  *
  * The value is persisted in `localStorage` (same-origin, so every tab and the
  * settings page share it) and synchronized between windows through the native
@@ -35,11 +28,6 @@ export const DISPLAY_MODES = Object.freeze([
     id: 'page-top',
     label: '页面置顶',
     description: '在当前网页里绝对置顶：桌宠固定在视口右下角，悬浮在页面所有内容（包括设置弹窗）之上。',
-  }),
-  Object.freeze({
-    id: 'browser-top',
-    label: '浏览器置顶',
-    description: '整个浏览器内全局置顶：桌宠固定在视口右下角并占用页面最高层级，不新开任何窗口；模式与位置在同浏览器各标签页之间保持一致（自动适配所有浏览器）。',
   }),
 ])
 export const DEFAULT_DISPLAY_MODE = 'default'

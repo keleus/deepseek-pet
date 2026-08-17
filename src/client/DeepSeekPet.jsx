@@ -46,9 +46,9 @@ export function useDisplayMode() {
 
 /**
  * Slot entry for the shell overlay: reads the shared display mode and hands
- * it to the pet surface. Every placement renders in-page — page-top and
- * browser-top portal to `document.body` with fixed viewport positioning, so
- * no new window or tab is ever opened (works identically in all browsers).
+ * it to the pet surface. The page-top placement portals to `document.body`
+ * with fixed viewport positioning, so no new window or tab is ever opened
+ * (works identically in all browsers).
  */
 export function DeepSeekPetEntry(props) {
   const displayMode = useDisplayMode()
@@ -402,10 +402,10 @@ export function DeepSeekPet({ useSessions, resolveSession, openSession, displayM
       </section>
     </aside>
   )
-  // Page-top / browser-top placements portal to <body> so the pet escapes the
-  // shell overlay layer's stacking context and sits above every page element.
-  // Both are pure in-page placements: no window or tab is ever opened.
-  if ((mode === 'page-top' || mode === 'browser-top') && typeof document !== 'undefined') {
+  // Page-top placement portals to <body> so the pet escapes the shell overlay
+  // layer's stacking context and sits above every page element. It is a pure
+  // in-page placement: no window or tab is ever opened.
+  if (mode === 'page-top' && typeof document !== 'undefined') {
     return createPortal(petSurface, document.body)
   }
   return petSurface

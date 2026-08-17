@@ -115,7 +115,7 @@ test('built dsh.client bundle registers the shell overlay and the pet settings s
   assert.match(settingsHtml, /展示模式/)
   assert.match(settingsHtml, /value="default"/)
   assert.match(settingsHtml, /value="page-top"/)
-  assert.match(settingsHtml, /value="browser-top"/)
+  assert.doesNotMatch(settingsHtml, /browser-top|浏览器置顶/)
 
   for (const cleanup of cleanups.reverse()) cleanup()
   delete globalThis.window
