@@ -1,5 +1,6 @@
 /** Select one complete emoji sprite. Motion is applied to the whole sprite in CSS. */
 export function presentationForState(visual, phase = 0, signals = {}) {
+  if (visual.kind === 'whip') return result(visual.reaction)
   if (visual.kind === 'waiting') return waitingReaction(phase, signals.waitingMs ?? 0)
   if (signals.hasImage || visual.kind === 'vision') return result('blindfold')
   if (signals.userCorrection || visual.kind === 'apology') return result('apologetic')
