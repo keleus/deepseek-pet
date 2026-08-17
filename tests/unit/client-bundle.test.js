@@ -5,6 +5,7 @@ import React from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import * as ReactModule from 'react'
 import * as JsxRuntime from 'react/jsx-runtime'
+import * as ReactDom from 'react-dom'
 
 test('declares an installable dsh bundle for the web profile', () => {
   const manifest = JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf8'))
@@ -17,9 +18,9 @@ test('declares an installable dsh bundle for the web profile', () => {
   assert.match(patch, /name: deepseek-pet/)
 })
 
-test('built dsh.client bundle registers an embedded shell overlay', async () => {
+test('built dsh.client bundle registers the shell overlay and the pet settings section', async () => {
   let moduleRecord
-  let registered
+  const registered = {}
   const styles = []
   const cleanups = []
 
@@ -42,6 +43,7 @@ test('built dsh.client bundle registers an embedded shell overlay', async () => 
   const plugin = moduleRecord.factory((specifier) => {
     if (specifier === 'react') return ReactModule
     if (specifier === 'react/jsx-runtime') return JsxRuntime
+    if (specifier === 'react-dom') return ReactDom
     throw new Error(`unexpected client external: ${specifier}`)
   })
 
@@ -54,18 +56,20 @@ test('built dsh.client bundle registers an embedded shell overlay', async () => 
     sessions: { binding() { return undefined }, open() {} },
     slots: {
       inject(name, callback) {
-        assert.equal(name, 'shell.overlay')
+        assert.ok(name === 'shell.overlay' || name === 'settings.section', `unexpected slot: ${name}`)
         return callback()
       },
       register(options, Component) {
-        registered = { options, Component, business: options.inject() }
+        registered[options.name] = { options, Component, business: options.inject?.() }
         return () => {}
       },
     },
   }
 
   plugin.apply(ctx)
-  assert.equal(registered.options.id, 'deepseek-pet')
+  assert.equal(registered['shell.overlay'].options.id, 'deepseek-pet')
+  assert.equal(registered['settings.section'].options.id, 'deepseek-pet')
+  assert.equal(registered['settings.section'].options.label, '桌宠设置')
   assert.equal(styles.length, 1)
 
   const listSnapshot = {
@@ -90,9 +94,9 @@ test('built dsh.client bundle registers an embedded shell overlay', async () => 
       projections: { faceOf() { return undefined } },
     },
   })
-  const html = renderToStaticMarkup(React.createElement(registered.Component, {
+  const html = renderToStaticMarkup(React.createElement(registered['shell.overlay'].Component, {
     useSessions: selector => selector(listSnapshot),
-    ...registered.business,
+    ...registered['shell.overlay'].business,
   }))
   assert.match(html, /DeepSeek 任务状态助手/)
   assert.match(html, /data-current="true"/)
@@ -104,6 +108,14 @@ test('built dsh.client bundle registers an embedded shell overlay', async () => 
   assert.doesNotMatch(html, /dsh-live2d-rig|dsh-live2d-part/)
   assert.match(html, /等待你的回答/)
   assert.doesNotMatch(html, /dsh-live2d-pending|<fieldset|请选择下一步|>提交</)
+  assert.match(html, /data-display-mode="default"/)
+
+  const settingsHtml = renderToStaticMarkup(React.createElement(registered['settings.section'].Component))
+  assert.match(settingsHtml, /桌宠设置/)
+  assert.match(settingsHtml, /展示模式/)
+  assert.match(settingsHtml, /value="default"/)
+  assert.match(settingsHtml, /value="page-top"/)
+  assert.match(settingsHtml, /value="browser-top"/)
 
   for (const cleanup of cleanups.reverse()) cleanup()
   delete globalThis.window

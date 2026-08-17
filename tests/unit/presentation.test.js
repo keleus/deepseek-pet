@@ -11,7 +11,9 @@ test('uses semantic reactions for long thought, full context, and images', () =>
 })
 
 test('maps tool work and terminal errors to richer emoji reactions', () => {
-  assert.equal(presentationForState({ kind: 'idle' }, 99).reaction, 'idle')
+  // Idle reactions rotate with phase: ['idle','cheerful','relaxed','proud'][phase % 4].
+  assert.equal(presentationForState({ kind: 'idle' }, 0).reaction, 'idle')
+  assert.equal(presentationForState({ kind: 'idle' }, 99).reaction, 'proud')
   assert.equal(
     presentationForState({ kind: 'working', detail: 'apply_patch' }, 1).reaction,
     'desk-coding',

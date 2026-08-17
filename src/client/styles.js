@@ -24,9 +24,32 @@ export const STYLES = `
 @media(max-width:760px){[data-dsh-live2d-root]{right:7px;bottom:74px;width:286px}.dsh-live2d-conversation{width:286px}.dsh-live2d-sessions{width:256px}.dsh-live2d-session-list{width:232px}}
 @media(hover:none){.dsh-live2d-tools{opacity:.72;pointer-events:auto;transform:none}}
 @media(prefers-reduced-motion:reduce){[data-dsh-live2d-root] *,[data-dsh-live2d-root] *:before{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}}
+/* 展示模式：页面置顶 — 视口固定 + 页面内顶层（通过 body 传送门渲染，
+   脱离 shell.overlay 的堆叠上下文，悬浮在页面内容与弹窗之上） */
+[data-dsh-live2d-root][data-display-mode="page-top"]{position:fixed;z-index:999999}
+/* 展示模式：浏览器置顶 — 视口固定 + 页面最高层级（同样通过 body 传送门渲染，
+   盖过一切页面元素；不新开窗口，自动适配所有浏览器） */
+[data-dsh-live2d-root][data-display-mode="browser-top"]{position:fixed;z-index:2147483000}
+/* 设置面板：桌宠设置（settings.section 注册页）— 跟随页面设计系统：
+   继承面板字体，使用 --dsw-alias-* 令牌与设置页控件样式（Models/General 同款） */
+.dsh-live2d-settings{display:flex;flex-direction:column;gap:12px;min-width:0;max-width:620px}
+.dsh-live2d-settings-title{margin:0;font-size:18px;font-weight:650;line-height:1.35}
+.dsh-live2d-settings-intro{margin:0;color:var(--dsw-alias-label-secondary,rgba(128,128,128,.95));font-size:13px;line-height:1.6}
+.dsh-live2d-settings-field{display:flex;flex-direction:column;gap:6px;margin-top:4px}
+.dsh-live2d-settings-label{color:var(--dsw-alias-label-secondary,rgba(128,128,128,.95));font-size:13px;line-height:1.5}
+.dsh-live2d-settings-select{box-sizing:border-box;width:100%;max-width:240px;height:32px;padding:0 32px 0 10px;appearance:none;border:1px solid var(--dsw-alias-border-l2,rgba(128,128,128,.32));border-radius:8px;font:inherit;font-size:14px;line-height:22px;background:var(--dsw-alias-bg-layer-1,transparent);color:var(--dsw-alias-label-primary);cursor:pointer;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12' fill='none'%3E%3Cpath d='M3 4.5L6 7.5L9 4.5' stroke='%2381858C' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 12px center;background-size:12px 12px;transition:border-color .15s ease}
+.dsh-live2d-settings-select:hover{border-color:var(--dsw-alias-brand-primary,#4d6bfe)}
+.dsh-live2d-settings-select:focus{outline:none;border-color:var(--dsw-alias-brand-primary,#4d6bfe)}
+.dsh-live2d-settings-detail{margin:0;padding:10px 12px;border:1px solid var(--dsw-alias-border-l1,rgba(140,140,140,.28));border-radius:10px;background:var(--dsw-alias-bg-layer-1,transparent);color:var(--dsw-alias-label-secondary,rgba(128,128,128,.95));font-size:13px;line-height:1.6}
+.dsh-live2d-settings-hint{margin:0;color:var(--dsw-alias-label-tertiary,rgba(128,128,128,.7));font-size:12px;line-height:1.6}
 `
 
+/**
+ * Install the pet stylesheet into the main document.
+ * @returns cleanup.
+ */
 export function installStyles() {
+  if (typeof document === 'undefined') return () => {}
   const existing = document.querySelector('style[data-plugin="deepseek-pet"]')
   if (existing) return () => {}
   const style = document.createElement('style')
