@@ -15,7 +15,7 @@ await build({
   jsxImportSource: 'react',
   sourcemap: false,
   minify: true,
-  external: ['react', 'react/jsx-runtime'],
+  external: ['react', 'react/jsx-runtime', 'react-dom'],
   banner: {
     js: 'window.__ModuleLoader__.load({ id: "deepseek-pet", factory: (require) => { var module = { exports: {} }; var exports = module.exports;',
   },

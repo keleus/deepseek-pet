@@ -1,4 +1,5 @@
-import { DeepSeekPet } from './DeepSeekPet.jsx'
+import { DeepSeekPetEntry } from './DeepSeekPet.jsx'
+import { DeepSeekPetSettings } from './DeepSeekPetSettings.jsx'
 import { installStyles } from './styles.js'
 
 export const inject = ['slots', 'sessions']
@@ -15,5 +16,12 @@ export function apply(ctx) {
     order: 90,
     label: 'DeepSeek Pet 插件',
     inject: () => ({ resolveSession, openSession }),
-  }, DeepSeekPet))
+  }, DeepSeekPetEntry))
+
+  ctx.slots.inject('settings.section', () => ctx.slots.register({
+    name: 'settings.section',
+    id: 'deepseek-pet',
+    order: 90,
+    label: '桌宠设置',
+  }, DeepSeekPetSettings))
 }
