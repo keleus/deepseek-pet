@@ -55,9 +55,41 @@ function readStoredMode() {
 let current = readStoredMode()
 
 const listeners = new Set()
+let windowListenersAttached = false
 
 function notify() {
   for (const listener of listeners) listener()
+}
+
+function onLocalDisplayModeChange(event) {
+  const mode = event?.detail?.mode
+  if (!isValidDisplayMode(mode)) return
+  current = mode
+  notify()
+}
+
+function onStoredDisplayModeChange(event) {
+  if (event?.key !== DISPLAY_MODE_KEY) return
+  const mode = readStoredMode()
+  if (mode === current) return
+  current = mode
+  notify()
+}
+
+function attachWindowListeners() {
+  if (windowListenersAttached || typeof window === 'undefined' || typeof window.addEventListener !== 'function') return
+  window.addEventListener(DISPLAY_MODE_CHANGED_EVENT, onLocalDisplayModeChange)
+  window.addEventListener('storage', onStoredDisplayModeChange)
+  windowListenersAttached = true
+}
+
+function detachWindowListeners() {
+  if (!windowListenersAttached) return
+  if (typeof window !== 'undefined' && typeof window.removeEventListener === 'function') {
+    window.removeEventListener(DISPLAY_MODE_CHANGED_EVENT, onLocalDisplayModeChange)
+    window.removeEventListener('storage', onStoredDisplayModeChange)
+  }
+  windowListenersAttached = false
 }
 
 export function getDisplayModeSnapshot() {
@@ -87,29 +119,10 @@ export function setDisplayMode(mode) {
  * @returns unsubscribe.
  */
 export function subscribeDisplayMode(listener) {
-  const onLocal = (event) => {
-    const mode = event?.detail?.mode
-    if (!isValidDisplayMode(mode)) return
-    current = mode
-    notify()
-  }
-  const onStorage = (event) => {
-    if (event?.key !== DISPLAY_MODE_KEY) return
-    const mode = readStoredMode()
-    if (mode === current) return
-    current = mode
-    notify()
-  }
   listeners.add(listener)
-  try {
-    window.addEventListener(DISPLAY_MODE_CHANGED_EVENT, onLocal)
-    window.addEventListener('storage', onStorage)
-  } catch {}
+  attachWindowListeners()
   return () => {
     listeners.delete(listener)
-    try {
-      window.removeEventListener(DISPLAY_MODE_CHANGED_EVENT, onLocal)
-      window.removeEventListener('storage', onStorage)
-    } catch {}
+    if (listeners.size === 0) detachWindowListeners()
   }
 }
