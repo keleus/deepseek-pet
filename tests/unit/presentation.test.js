@@ -22,6 +22,7 @@ test('maps tool work and terminal errors to richer emoji reactions', () => {
 })
 
 test('maps idle, question, correction, approval, and busy session signals', () => {
+  assert.equal(presentationForState({ kind: 'idle' }, 0).reaction, 'idle')
   assert.equal(presentationForState({ kind: 'idle' }, 99).reaction, 'proud')
   assert.equal(presentationForState({ kind: 'idle' }, 0, { idleMs: 10 * 60_000 }).reaction, 'hungry')
   assert.equal(presentationForState({ kind: 'idle' }, 0, { idleMs: 30 * 60_000 }).reaction, 'pillow')

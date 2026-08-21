@@ -1,7 +1,11 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
+import { createPortal } from 'react-dom'
 import { REACTIONS, REACTION_FRAMES } from './assets.generated.js'
 import { clampPetScale, latestOutput, presentationForState, rotatingActivityLabel } from './pet-presentation.js'
 import { clampPetOffset } from './pet-position.js'
+import {
+  getDisplayModeSnapshot, subscribeDisplayMode,
+} from './pet-display.js'
 import {
   completionState, hasRecentCorrection, hasRecentImage, reasoningQuestionCount,
   stateFromSnapshot, streamFromSnapshot,
@@ -46,7 +50,37 @@ function nextWhipVisual() {
   }
 }
 
-export function DeepSeekPet({ useSessions, resolveSession, openSession }) {
+/** uSES subscription used when the module runs outside a browser (SSR/tests). */
+const NOOP_SUBSCRIBE = () => () => {}
+
+/**
+ * Read the shared display-mode store (see pet-display.js). Kept here so the
+ * pet surface and the settings page share one subscription shape; the
+ * `displayMode` prop may override the store (used by the slot entry to pin
+ * the placement the entry already read).
+ */
+export function useDisplayMode() {
+  return useSyncExternalStore(
+    typeof window !== 'undefined' ? subscribeDisplayMode : NOOP_SUBSCRIBE,
+    getDisplayModeSnapshot,
+    getDisplayModeSnapshot,
+  )
+}
+
+/**
+ * Slot entry for the shell overlay: reads the shared display mode and hands
+ * it to the pet surface. The page-top placement portals to `document.body`
+ * with fixed viewport positioning, so no new window or tab is ever opened
+ * (works identically in all browsers).
+ */
+export function DeepSeekPetEntry(props) {
+  const displayMode = useDisplayMode()
+  return <DeepSeekPet {...props} displayMode={displayMode} />
+}
+
+export function DeepSeekPet({ useSessions, resolveSession, openSession, displayMode }) {
+  const storedMode = useDisplayMode()
+  const mode = displayMode ?? storedMode
   const list = useSessions(value => value)
   const sessionId = list.current
   const focusedSession = sessionId ? list.byId[sessionId] : undefined
@@ -204,7 +238,7 @@ export function DeepSeekPet({ useSessions, resolveSession, openSession }) {
 
   useLayoutEffect(() => {
     keepPetOnScreen()
-  }, [collapsed, scale, keepPetOnScreen])
+  }, [collapsed, scale, mode, keepPetOnScreen])
 
   const stream = streamFromSnapshot(snapshot)
   const streamText = stream.reply || stream.reasoning
@@ -400,8 +434,9 @@ export function DeepSeekPet({ useSessions, resolveSession, openSession }) {
   const bubbleTitle = tapText || (showStream ? activityLabel : effectiveVisual.label)
   const bubbleDetail = tapDetail || (showStream ? typedStream : effectiveVisual.detail)
   const visibleFrame = !collapsed && FRAME_FOR_REACTION[activeReaction] === activeFrame ? activeFrame : ''
-  return (
+  const petSurface = (
     <aside data-dsh-live2d-root data-collapsed={collapsed ? 'true' : 'false'} data-pet-state={effectiveVisual.kind}
+      data-display-mode={mode}
       data-reaction-pending={reactionPending ? 'true' : 'false'} data-tapped={tapText ? 'true' : 'false'}
       style={{ '--pet-drag-x': `${offset.x}px`, '--pet-drag-y': `${offset.y}px`, '--pet-scale': scale }} aria-label="DeepSeek 任务状态助手">
       <div className="dsh-live2d-bubble" data-visible={bubbleVisible || taskActive || tapText ? 'true' : 'false'} data-stream={showStream ? 'true' : 'false'} role="status" aria-live="polite">
@@ -433,6 +468,13 @@ export function DeepSeekPet({ useSessions, resolveSession, openSession }) {
       </section>
     </aside>
   )
+  // Page-top placement portals to <body> so the pet escapes the shell overlay
+  // layer's stacking context and sits above every page element. It is a pure
+  // in-page placement: no window or tab is ever opened.
+  if (mode === 'page-top' && typeof document !== 'undefined') {
+    return createPortal(petSurface, document.body)
+  }
+  return petSurface
 }
 
 export function deriveVisual(visual, signals) {
