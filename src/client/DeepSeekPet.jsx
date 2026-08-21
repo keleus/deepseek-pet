@@ -7,6 +7,9 @@ import {
   getDisplayModeSnapshot, subscribeDisplayMode,
 } from './pet-display.js'
 import {
+  getReactionSettingsSnapshot, subscribeReactionSettings,
+} from './pet-reactions.js'
+import {
   completionState, hasRecentCorrection, hasRecentImage, reasoningQuestionCount,
   stateFromSnapshot, streamFromSnapshot,
 } from './pet-state.js'
@@ -97,6 +100,11 @@ export function DeepSeekPet({ useSessions, resolveSession, openSession, displayM
   const subscribePressure = useCallback(listener => pressureFace?.subscribe(listener) ?? (() => {}), [pressureFace])
   const getPressure = useCallback(() => pressureFace?.getSnapshot() ?? EMPTY_PRESSURE, [pressureFace])
   const pressure = useSyncExternalStore(subscribePressure, getPressure, getPressure)
+  const reactionSettings = useSyncExternalStore(
+    typeof window !== 'undefined' ? subscribeReactionSettings : NOOP_SUBSCRIBE,
+    getReactionSettingsSnapshot,
+    getReactionSettingsSnapshot,
+  )
   const immediate = stateFromSnapshot(session ? snapshot : null)
   const taskActive = Boolean(snapshot.running || snapshot.runningCalls?.length || snapshot.partial || snapshot.pending?.length || snapshot.queue?.length)
   const contextRatio = Number.isFinite(pressure?.projectedTokens) && Number.isFinite(pressure?.contextWindow)
@@ -125,7 +133,7 @@ export function DeepSeekPet({ useSessions, resolveSession, openSession, displayM
   const [bubbleVisible, setBubbleVisible] = useState(true)
   const [bubblePage, setBubblePage] = useState(0)
   const [activeReaction, setActiveReaction] = useState(() => presentationForState(initialEffective, 0, {
-    idleMs: initialIdleMsRef.current, visualMs: 0, waitingMs: 0,
+    idleMs: initialIdleMsRef.current, reactionSettings, visualMs: 0, waitingMs: 0,
   }).reaction)
   const [activeFrame, setActiveFrame] = useState('')
   const [reactionPending, setReactionPending] = useState(false)
@@ -144,6 +152,9 @@ export function DeepSeekPet({ useSessions, resolveSession, openSession, displayM
   const typedStreamRef = useRef('')
   const streamTargetRef = useRef('')
   const reactionChangedAt = useRef(0)
+  const effectiveVisual = whipVisual ?? deriveVisual(visual, {
+    busySessions, contextRatio, hasImage, idleMs, questionCount, taskActive, userCorrection, waitingMs,
+  })
 
   useEffect(() => {
     let transitionTimer
@@ -167,14 +178,14 @@ export function DeepSeekPet({ useSessions, resolveSession, openSession, displayM
     setPhase(0)
     const interval = window.setInterval(() => setPhase(value => value + 1), 12_000)
     return () => window.clearInterval(interval)
-  }, [visual.kind, visual.detail])
+  }, [effectiveVisual.kind, effectiveVisual.reaction])
 
   useEffect(() => {
     const started = Date.now()
     setVisualMs(0)
     const interval = window.setInterval(() => setVisualMs(Date.now() - started), 250)
     return () => window.clearInterval(interval)
-  }, [visual.kind, visual.detail])
+  }, [effectiveVisual.kind, effectiveVisual.reaction])
 
   useEffect(() => {
     if (visual.kind !== 'thinking') { setThinkingMs(0); return () => {} }
@@ -277,12 +288,9 @@ export function DeepSeekPet({ useSessions, resolveSession, openSession, displayM
     if (streamLineRef.current) streamLineRef.current.scrollLeft = streamLineRef.current.scrollWidth
   }, [typedStream])
 
-  const effectiveVisual = whipVisual ?? deriveVisual(visual, {
-    busySessions, contextRatio, hasImage, idleMs, questionCount, taskActive, userCorrection, waitingMs,
-  })
   const presentation = useMemo(() => presentationForState(effectiveVisual, phase, {
-    busySessions, contextRatio, hasImage, idleMs, questionCount, thinkingMs, userCorrection, visualMs, waitingMs,
-  }), [effectiveVisual.kind, effectiveVisual.detail, effectiveVisual.reaction, phase, busySessions, contextRatio, hasImage, idleMs, questionCount, thinkingMs, userCorrection, visualMs, waitingMs])
+    busySessions, contextRatio, hasImage, idleMs, questionCount, reactionSettings, thinkingMs, userCorrection, visualMs, waitingMs,
+  }), [effectiveVisual.kind, effectiveVisual.detail, effectiveVisual.reaction, phase, busySessions, contextRatio, hasImage, idleMs, questionCount, reactionSettings, thinkingMs, userCorrection, visualMs, waitingMs])
 
   useEffect(() => {
     setBubbleVisible(true)

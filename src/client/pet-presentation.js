@@ -1,60 +1,84 @@
+import { reactionForGroup } from './pet-reactions.js'
+
+const phaseFor = (elapsed, interval, fallback = 0) => Number.isFinite(elapsed)
+  ? Math.floor(Math.max(0, elapsed) / interval)
+  : fallback
+
 /** Select one complete emoji sprite. Motion is applied to the whole sprite in CSS. */
 export function presentationForState(visual, phase = 0, signals = {}) {
   if (visual.kind === 'whip') return result(visual.reaction)
-  if (visual.kind === 'waiting') return waitingReaction(phase, signals.waitingMs ?? 0)
+  if (visual.kind === 'waiting') return waitingReaction(phase, signals.waitingMs ?? 0, signals.reactionSettings)
   if (signals.hasImage || visual.kind === 'vision') return result('blindfold')
-  if (signals.userCorrection || visual.kind === 'apology') return result('apologetic')
-  if (visual.kind === 'tool-error') return result((signals.visualMs ?? 0) < 3000 ? 'shocked' : 'desk-facepalm')
-  if (visual.kind === 'approval') return waitingReaction(phase, signals.waitingMs ?? 0)
-  if (signals.busySessions >= 3 || visual.kind === 'busy') return result('desk-coding')
+  if (signals.userCorrection || visual.kind === 'apology') return grouped('error', ['apologetic', 'desk-facepalm'], 0, signals)
+  if (visual.kind === 'tool-error') return grouped('error', (signals.visualMs ?? 0) < 3000 ? ['shocked', 'apologetic'] : ['desk-facepalm', 'apologetic'], 0, signals)
+  if (visual.kind === 'approval') return waitingReaction(phase, signals.waitingMs ?? 0, signals.reactionSettings)
+  if (signals.busySessions >= 3 || visual.kind === 'busy') {
+    return alternatingWorkMeal('working', ['desk-coding', 'thinking'], phaseFor(signals.visualMs, 15_000, phase), signals)
+  }
   if (signals.contextRatio >= 0.82 || visual.kind === 'full') return result('satiated')
-  if (signals.contextRatio >= 0.62 || visual.kind === 'context-snack') return result('deepseek-rice')
+  if (signals.contextRatio >= 0.62 || visual.kind === 'context-snack') {
+    return grouped('meal', ['deepseek-rice', 'eating-rice'], phaseFor(signals.visualMs, 20_000, phase), signals)
+  }
   if (visual.kind === 'sleeping' || signals.idleMs >= 60 * 60_000) return result('sleeping')
   if (visual.kind === 'sleepy' || signals.idleMs >= 30 * 60_000) return result('pillow')
   if (visual.kind === 'hungry' || signals.idleMs >= 10 * 60_000) return result('hungry')
   if (visual.kind === 'thinking' && signals.questionCount >= 4) {
-    return result(signals.questionCount >= 7 ? 'deepseek-pressure' : ['desk-confused', 'thinking'][phase % 2])
+    const candidates = signals.questionCount >= 7 ? ['deepseek-pressure', 'desk-confused'] : ['desk-confused', 'thinking']
+    return alternatingWorkMeal('thinking', candidates, phaseFor(signals.thinkingMs, 12_000, phase), signals)
   }
   if (visual.kind === 'thinking') {
-    if ((signals.thinkingMs ?? 0) < 12_000) return result('thinking')
-    if (signals.thinkingMs < 45_000) return result(['desk-coding', 'relaxed', 'thinking'][(Math.max(1, phase) - 1) % 3])
-    return result(['desk-confused', 'desk-coding', 'deepseek-pressure'][phase % 3])
+    if ((signals.thinkingMs ?? 0) < 12_000) return grouped('thinking', ['thinking', 'desk-coding'], 0, signals)
+    const candidates = signals.thinkingMs < 45_000
+      ? ['desk-coding', 'thinking', 'relaxed']
+      : ['desk-confused', 'desk-coding', 'deepseek-pressure']
+    return alternatingWorkMeal('thinking', candidates, phaseFor(signals.thinkingMs - 12_000, 12_000), signals)
   }
 
   if (visual.kind === 'success') {
-    const elapsed = signals.visualMs ?? 0
-    return result(elapsed < 2500 ? 'desk-done' : elapsed < 5200 ? 'cheerful' : 'proud')
+    return grouped('success', ['cheerful', 'proud', 'desk-done'], phaseFor(signals.visualMs, 4_000), signals)
   }
-  if (visual.kind === 'error') return result(['apologetic', 'crying', 'desk-facepalm'][phase % 3])
-  if (visual.kind === 'working') return result(reactionForTool(visual.detail))
+  if (visual.kind === 'error') return grouped('error', ['apologetic', 'crying', 'desk-facepalm'], phaseFor(signals.visualMs, 5_000, phase), signals)
+  if (visual.kind === 'working') return alternatingWorkMeal('working', reactionsForTool(visual.detail), phaseFor(signals.visualMs, 15_000, phase), signals)
   if (visual.kind === 'listening') return result('skeptical')
-  if (visual.kind === 'thinking') return result('thinking')
-  if (visual.kind === 'speaking') return result(['desk-coding', 'thinking', 'skeptical'][phase % 3])
-  if (visual.kind === 'confused') return result('desk-confused')
+  if (visual.kind === 'speaking') return grouped('speaking', ['desk-coding', 'thinking', 'skeptical'], phaseFor(signals.visualMs, 12_000, phase), signals)
+  if (visual.kind === 'confused') {
+    const candidates = signals.questionCount >= 7 ? ['deepseek-pressure', 'desk-confused'] : ['desk-confused', 'thinking']
+    return alternatingWorkMeal('thinking', candidates, phaseFor(signals.thinkingMs ?? signals.visualMs, 12_000, phase), signals)
+  }
   if (visual.kind === 'idle') {
-    if ((signals.idleMs ?? 0) >= 2 * 60_000) return result(['relaxed', 'skeptical', 'thinking'][phase % 3])
-    return result(['idle', 'cheerful', 'relaxed', 'proud'][phase % 4])
+    return grouped('idle', ['idle', 'relaxed', 'cheerful', 'proud'], phaseFor(signals.idleMs, 30_000, phase), signals)
   }
   return result('idle')
 }
 
-function waitingReaction(phase, waitingMs) {
-  if (waitingMs >= 4 * 60_000) return result('sleepy')
-  if (waitingMs >= 2 * 60_000) return result('angry')
-  if (waitingMs >= 45_000) return result('skeptical')
-  return result(['relaxed', 'skeptical', 'thinking'][phase % 3])
+function waitingReaction(phase, waitingMs, reactionSettings) {
+  const signals = { reactionSettings }
+  if (waitingMs >= 4 * 60_000) return grouped('waiting', ['sleepy', 'skeptical'], 0, signals)
+  if (waitingMs >= 2 * 60_000) return grouped('waiting', ['angry', 'skeptical'], 0, signals)
+  if (waitingMs >= 45_000) return grouped('waiting', ['skeptical', 'thinking'], phaseFor(waitingMs - 45_000, 30_000), signals)
+  return grouped('waiting', ['relaxed', 'skeptical', 'thinking'], phaseFor(waitingMs, 15_000, phase), signals)
 }
 
-function reactionForTool(detail) {
+function reactionsForTool(detail) {
   const tool = String(detail ?? '').toLowerCase()
-  if (tool.includes('subagent') || tool.includes('spawn_agent') || tool.includes('create_thread')) return 'desk-coding'
-  if (tool.includes('web') || tool.includes('search') || tool.includes('browser')) return 'skeptical'
-  if (tool === 'read' || tool.includes('fetch')) return 'thinking'
-  if (tool.includes('image') || tool.includes('draw')) return 'thinking'
+  if (tool.includes('subagent') || tool.includes('spawn_agent') || tool.includes('create_thread')) return ['desk-coding', 'thinking']
+  if (tool.includes('web') || tool.includes('search') || tool.includes('browser')) return ['skeptical', 'thinking']
+  if (tool === 'read' || tool.includes('fetch')) return ['thinking', 'skeptical']
+  if (tool.includes('image') || tool.includes('draw')) return ['thinking', 'desk-coding']
   if (tool.includes('patch') || tool.includes('edit') || tool.includes('write') || tool.includes('bash') || tool.includes('exec')) {
-    return 'desk-coding'
+    return ['desk-coding', 'thinking']
   }
-  return 'desk-coding'
+  return ['desk-coding', 'thinking']
+}
+
+function grouped(groupId, candidates, phase, signals) {
+  return result(reactionForGroup(groupId, candidates, phase, signals.reactionSettings))
+}
+
+function alternatingWorkMeal(groupId, workCandidates, phase, signals) {
+  const turn = Math.max(0, Math.trunc(phase))
+  const candidates = turn % 2 === 0 ? workCandidates : ['eating-rice', 'deepseek-rice']
+  return grouped(groupId, candidates, Math.floor(turn / 2), signals)
 }
 
 function result(reaction) {

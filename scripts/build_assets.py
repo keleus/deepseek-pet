@@ -28,6 +28,7 @@ REACTIONS = (
     "desk-done",
     "desk-facepalm",
     "deepseek-rice",
+    "eating-rice",
     "deepseek-pressure",
 )
 

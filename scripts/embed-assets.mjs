@@ -9,7 +9,7 @@ const groups = {
     'idle',
     'skeptical', 'cheerful', 'apologetic', 'shocked', 'sleepy', 'proud', 'crying', 'angry',
     'thinking', 'relaxed', 'desk-confused', 'desk-coding', 'desk-done', 'desk-facepalm',
-    'deepseek-rice', 'deepseek-pressure', 'blindfold', 'satiated', 'hungry', 'pillow', 'sleeping',
+    'deepseek-rice', 'eating-rice', 'deepseek-pressure', 'blindfold', 'satiated', 'hungry', 'pillow', 'sleeping',
     'whip-defense', 'whip-frightened', 'whip-giggle',
   ].map(name => [name, name === 'idle' ? 'deepseek-idle' : `reaction-${name}`])),
   REACTION_FRAMES: {
