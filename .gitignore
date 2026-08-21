@@ -20,6 +20,9 @@ pnpm-debug.log*
 .env.*
 !.env.example
 
+# Local review artifacts
+grok-review*
+
 # Editor and operating-system files
 .DS_Store
 .idea/
