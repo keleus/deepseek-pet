@@ -4,7 +4,7 @@ node_modules/
 # Build and test output that is not distributed
 dist/
 coverage/
-tests/visual/*.bundle.js
+tests/
 
 # Python helper caches and local environments
 __pycache__/

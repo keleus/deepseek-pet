@@ -123,12 +123,10 @@ npx @deepseek-ai/dsh plugin --profile web remove deepseek-pet
 ```bash
 npm install
 npm run build
-npm test
 ```
 
 - `npm run assets`：从源图生成透明 WebP 表情并嵌入客户端代码；
-- `npm run build`：生成 `lib/index.js` 和 `lib/client.js`；
-- `npm test`：运行状态映射、交互和插件装载测试。
+- `npm run build`：生成 `lib/index.js` 和 `lib/client.js`。
 
 主要目录：
 
@@ -137,8 +135,6 @@ src/host/         插件 Host 入口
 src/client/       网页入口、组件、状态逻辑和动画样式
 public/assets/    表情源素材
 scripts/          素材处理和构建脚本
-tests/unit/       自动化单元测试
-tests/visual/     可按需构建的视觉测试夹具
 lib/              可安装的构建产物
 ```
 
