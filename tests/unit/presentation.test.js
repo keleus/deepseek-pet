@@ -11,7 +11,6 @@ test('uses semantic reactions for long thought, full context, and images', () =>
 })
 
 test('maps tool work and terminal errors to richer emoji reactions', () => {
-  assert.equal(presentationForState({ kind: 'idle' }, 99).reaction, 'idle')
   assert.equal(
     presentationForState({ kind: 'working', detail: 'apply_patch' }, 1).reaction,
     'desk-coding',
@@ -23,6 +22,7 @@ test('maps tool work and terminal errors to richer emoji reactions', () => {
 })
 
 test('maps idle, question, correction, approval, and busy session signals', () => {
+  assert.equal(presentationForState({ kind: 'idle' }, 99).reaction, 'proud')
   assert.equal(presentationForState({ kind: 'idle' }, 0, { idleMs: 10 * 60_000 }).reaction, 'hungry')
   assert.equal(presentationForState({ kind: 'idle' }, 0, { idleMs: 30 * 60_000 }).reaction, 'pillow')
   assert.equal(presentationForState({ kind: 'idle' }, 0, { idleMs: 60 * 60_000 }).reaction, 'sleeping')

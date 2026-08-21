@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { REACTIONS, REACTION_FRAMES } from './assets.generated.js'
 import { clampPetScale, latestOutput, presentationForState, rotatingActivityLabel } from './pet-presentation.js'
+import { clampPetOffset } from './pet-position.js'
 import {
   completionState, hasRecentCorrection, hasRecentImage, reasoningQuestionCount,
   stateFromSnapshot, streamFromSnapshot,
@@ -82,8 +83,8 @@ export function DeepSeekPet({ useSessions, resolveSession, openSession }) {
   const [visualMs, setVisualMs] = useState(0)
   const [waitingMs, setWaitingMs] = useState(0)
   const [idleMs, setIdleMs] = useState(initialIdleMsRef.current)
-  const [offset, setOffset] = useState({ x: 0, y: 0 })
-  const [scale, setScale] = useState(1)
+  const [offset, setOffset] = useState(storedOffset)
+  const [scale, setScale] = useState(storedScale)
   const [tapText, setTapText] = useState('')
   const [tapDetail, setTapDetail] = useState('')
   const [whipVisual, setWhipVisual] = useState(null)
@@ -99,8 +100,10 @@ export function DeepSeekPet({ useSessions, resolveSession, openSession }) {
   const idleStarted = useRef(Date.now() - initialIdleMsRef.current)
   const waitingStarted = useRef(0)
   const humanTurnKey = useRef('')
+  const characterRef = useRef(null)
   const drag = useRef(null)
   const dragged = useRef(false)
+  const offsetRef = useRef(offset)
   const speechTimer = useRef(null)
   const whipTimer = useRef(null)
   const streamLineRef = useRef(null)
@@ -183,14 +186,25 @@ export function DeepSeekPet({ useSessions, resolveSession, openSession }) {
     return () => window.clearInterval(interval)
   }, [taskActive, sessionId])
 
-  useEffect(() => {
-    try {
-      const saved = JSON.parse(window.localStorage?.getItem(POSITION_KEY) ?? 'null')
-      if (Number.isFinite(saved?.x) && Number.isFinite(saved?.y)) setOffset(saved)
-      const savedScale = Number(window.localStorage?.getItem(SCALE_KEY))
-      if (Number.isFinite(savedScale) && savedScale >= .65 && savedScale <= 1.4) setScale(savedScale)
-    } catch {}
+  const keepPetOnScreen = useCallback(() => {
+    const rect = characterRef.current?.getBoundingClientRect()
+    if (!rect) return
+    const current = offsetRef.current
+    const next = clampPetOffset(current, current, rect, viewportSize())
+    if (next.x === current.x && next.y === current.y) return
+    offsetRef.current = next
+    setOffset(next)
+    try { window.localStorage?.setItem(POSITION_KEY, JSON.stringify(next)) } catch {}
   }, [])
+
+  useEffect(() => {
+    window.addEventListener('resize', keepPetOnScreen)
+    return () => window.removeEventListener('resize', keepPetOnScreen)
+  }, [keepPetOnScreen])
+
+  useLayoutEffect(() => {
+    keepPetOnScreen()
+  }, [collapsed, scale, keepPetOnScreen])
 
   const stream = streamFromSnapshot(snapshot)
   const streamText = stream.reply || stream.reasoning
@@ -311,24 +325,34 @@ export function DeepSeekPet({ useSessions, resolveSession, openSession }) {
   const pointerDown = useCallback(event => {
     if (event.button !== 0) return
     event.currentTarget.setPointerCapture?.(event.pointerId)
-    const root = event.currentTarget.closest('[data-dsh-live2d-root]')
-    drag.current = { pointerId: event.pointerId, x: event.clientX, y: event.clientY, origin: offset, rect: root?.getBoundingClientRect() }
+    drag.current = {
+      pointerId: event.pointerId, x: event.clientX, y: event.clientY,
+      origin: offsetRef.current, rect: event.currentTarget.getBoundingClientRect(),
+      viewport: viewportSize(),
+    }
     dragged.current = false
-  }, [offset])
+  }, [])
   const pointerMove = useCallback(event => {
     const active = drag.current
     if (!active || active.pointerId !== event.pointerId) { updateLook(event); return }
     const dx = event.clientX - active.x
     const dy = event.clientY - active.y
     if (Math.hypot(dx, dy) > 4) dragged.current = true
-    if (dragged.current) setOffset({ x: active.origin.x + dx, y: active.origin.y + dy })
+    if (dragged.current) {
+      const next = clampPetOffset(
+        { x: active.origin.x + dx, y: active.origin.y + dy },
+        active.origin, active.rect, active.viewport,
+      )
+      offsetRef.current = next
+      setOffset(next)
+    }
   }, [updateLook])
   const pointerUp = useCallback(event => {
     if (!drag.current || drag.current.pointerId !== event.pointerId) return
     event.currentTarget.releasePointerCapture?.(event.pointerId)
     drag.current = null
-    if (dragged.current) { try { window.localStorage?.setItem(POSITION_KEY, JSON.stringify(offset)) } catch {} }
-  }, [offset])
+    if (dragged.current) { try { window.localStorage?.setItem(POSITION_KEY, JSON.stringify(offsetRef.current)) } catch {} }
+  }, [])
   const wheelScale = useCallback(event => {
     if (collapsed) return
     event.preventDefault()
@@ -384,7 +408,7 @@ export function DeepSeekPet({ useSessions, resolveSession, openSession }) {
         <span>{bubbleTitle}</span><small ref={streamLineRef} title={showStream ? streamTarget : bubbleDetail}>{bubbleDetail}{showStream && <i aria-hidden="true" />}</small>
       </div>
       <div className="dsh-live2d-stage">
-        <button className="dsh-live2d-character" type="button" aria-label={collapsed ? '双击展开 DeepSeek 状态助手' : '拖动 DeepSeek 状态助手'}
+        <button ref={characterRef} className="dsh-live2d-character" type="button" aria-label={collapsed ? '双击展开 DeepSeek 状态助手' : '拖动 DeepSeek 状态助手'}
           onClick={tap} onDoubleClick={() => { if (collapsed) setCollapsed(false) }} onPointerDown={pointerDown}
           onPointerMove={pointerMove} onPointerUp={pointerUp} onPointerCancel={pointerUp} onWheel={wheelScale}>
           <span className="dsh-live2d-sprites" aria-hidden="true">
@@ -477,4 +501,26 @@ function inactiveDuration(now = Date.now()) {
 
 function rememberActivity(now = Date.now()) {
   try { window.localStorage?.setItem(LAST_ACTIVITY_KEY, String(now)) } catch {}
+}
+
+function viewportSize() {
+  return { width: window.innerWidth, height: window.innerHeight }
+}
+
+function storedOffset() {
+  if (typeof window === 'undefined') return { x: 0, y: 0 }
+  try {
+    const saved = JSON.parse(window.localStorage?.getItem(POSITION_KEY) ?? 'null')
+    if (Number.isFinite(saved?.x) && Number.isFinite(saved?.y)) return { x: saved.x, y: saved.y }
+  } catch {}
+  return { x: 0, y: 0 }
+}
+
+function storedScale() {
+  if (typeof window === 'undefined') return 1
+  try {
+    const saved = Number(window.localStorage?.getItem(SCALE_KEY))
+    if (Number.isFinite(saved) && saved >= .65 && saved <= 1.4) return saved
+  } catch {}
+  return 1
 }
