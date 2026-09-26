@@ -13,12 +13,19 @@ import {
   completionState, hasRecentCorrection, hasRecentImage, reasoningQuestionCount,
   stateFromSnapshot, streamFromSnapshot,
 } from './pet-state.js'
+import { currentSessionId, sessionLabel, sessionStatusOf } from './pet-session.js'
 
 const EMPTY_SNAPSHOT = Object.freeze({
   openState: 'open', running: false, runningCalls: [], partial: null,
   pending: [], queue: [], nodes: [], lastAgentError: null,
 })
 const EMPTY_PRESSURE = Object.freeze({})
+const EMPTY_STATUSES = new Map()
+/** Used when the slot entry is rendered without the injected status source. */
+const EMPTY_STATUS_SOURCE = Object.freeze({
+  getSnapshot: () => EMPTY_STATUSES,
+  subscribe: () => () => {},
+})
 const POSITION_KEY = 'deepseek-pet:position'
 const SCALE_KEY = 'deepseek-pet:scale'
 const LAST_ACTIVITY_KEY = 'deepseek-pet:last-activity'
@@ -81,17 +88,26 @@ export function DeepSeekPetEntry(props) {
   return <DeepSeekPet {...props} displayMode={displayMode} />
 }
 
-export function DeepSeekPet({ useSessions, resolveSession, openSession, displayMode }) {
+export function DeepSeekPet({ useSessions, resolveSession, openSession, statusSource = EMPTY_STATUS_SOURCE, displayMode }) {
   const storedMode = useDisplayMode()
   const mode = displayMode ?? storedMode
   const list = useSessions(value => value)
-  const sessionId = list.current
-  const focusedSession = sessionId ? list.byId[sessionId] : undefined
-  const runningSessions = useMemo(() => (list.ids ?? [])
-      .map(id => list.byId[id])
-      .filter(item => item && item.id !== sessionId && (item.running || item.pendingInteraction))
-      .sort((a, b) => Number(b.running) - Number(a.running) || (b.updatedAt ?? 0) - (a.updatedAt ?? 0)), [list, sessionId])
-  const busySessions = runningSessions.filter(item => item.running).length + Number(Boolean(focusedSession?.running))
+  // Running / pending-interaction facts live in the uiSession status map now;
+  // the catalog rows only carry the running bit.
+  const statuses = useSyncExternalStore(statusSource.subscribe, statusSource.getSnapshot, statusSource.getSnapshot)
+  const sessionId = currentSessionId(list)
+  const focusedSession = sessionId ? list.byId?.[sessionId] : undefined
+  const focusedStatus = sessionStatusOf(statuses, focusedSession)
+  const runningSessions = useMemo(() => (Array.isArray(list?.ids) ? list.ids : [])
+      .map(id => list.byId?.[id])
+      .filter(item => {
+        if (!item || item.id === sessionId) return false
+        const status = sessionStatusOf(statuses, item)
+        return status.running || Boolean(status.pendingInteraction)
+      })
+      .map(item => ({ id: item.id, label: sessionLabel(item), updatedAt: item.updatedAt ?? 0, ...sessionStatusOf(statuses, item) }))
+      .sort((a, b) => Number(b.running) - Number(a.running) || b.updatedAt - a.updatedAt), [list, sessionId, statuses])
+  const busySessions = runningSessions.filter(item => item.running).length + Number(Boolean(focusedStatus.running))
   const session = useMemo(() => sessionId ? resolveSession(sessionId) : undefined, [resolveSession, sessionId])
   const subscribe = useCallback(listener => session?.subscribe(listener) ?? (() => {}), [session])
   const getSnapshot = useCallback(() => session?.getSnapshot() ?? EMPTY_SNAPSHOT, [session])
@@ -465,11 +481,11 @@ export function DeepSeekPet({ useSessions, resolveSession, openSession, displayM
       </nav>
       <section className="dsh-live2d-sessions" data-visible={focusedSession || runningSessions.length ? 'true' : 'false'} aria-label="活跃会话">
         {focusedSession && <button className="dsh-live2d-session-focus" type="button" data-current="true" onClick={() => openSession?.(focusedSession.id)}>
-          <i data-running={focusedSession.running ? 'true' : 'false'} /><span>{focusedSession.displayTitle || focusedSession.title || focusedSession.id}</span><small>聚焦</small>
+          <i data-running={focusedStatus.running ? 'true' : 'false'} /><span>{sessionLabel(focusedSession)}</span><small>聚焦</small>
         </button>}
         <div className="dsh-live2d-session-list" data-visible={runningSessions.length ? 'true' : 'false'}>
           {runningSessions.slice(0, 7).map((item, index) => <button key={item.id} type="button" data-stacked={index >= 3 ? 'true' : 'false'} onClick={() => openSession?.(item.id)}>
-            <i data-running={item.running ? 'true' : 'false'} /><span>{item.displayTitle || item.title || item.id}</span><small>{item.pendingInteraction ? '等待操作' : '执行中'}</small>
+            <i data-running={item.running ? 'true' : 'false'} /><span>{item.label}</span><small>{item.pendingInteraction ? '等待操作' : '执行中'}</small>
           </button>)}
           {runningSessions.length > 7 && <footer>还有 {runningSessions.length - 7} 个会话</footer>}
         </div>
