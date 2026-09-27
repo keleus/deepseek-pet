@@ -48,8 +48,10 @@ export function stateFromSnapshot(snapshot) {
 
   const pending = Array.isArray(snapshot.pending) ? snapshot.pending : []
   if (pending.length > 0) {
+    // `uiSession.sessionStatus` pending interactions: 'approval' | 'plan-review' | 'question'.
     const kind = pending[0]?.kind
     if (kind === 'approval') return state('waiting', '等你确认工具调用', '请在任务中确认，我会在这里等你')
+    if (kind === 'plan-review') return state('waiting', '等你确认计划', '请在任务中确认计划，我会在这里等你')
     return state('waiting', '等待你的回答', kind === 'question' ? '请在任务中回答问题' : '请在任务中完成交互')
   }
 

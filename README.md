@@ -31,6 +31,19 @@ DeepSeek Pet 是一个嵌入 DeepSeek Harness 网页的交互式桌宠插件。�
   - **默认**：保持当前展示方式不变；
   - **页面置顶**：桌宠固定在视口右下角，悬浮在当前网页所有内容（包括弹窗）之上。
 
+## 兼容性
+
+本插件面向当前的 DeepSeek Harness Web 客户端（DSH `0.1.7` 系列及以上）。
+Harness 把会话数据拆到了多个客户端面上，插件按新的分工读取：
+
+- 聚焦会话 = 会话列表里被主视图保留的那一行（`retainedBy.mainView`），不再读取已移除的 `sessions.list.current`；
+- 会话正文（用户消息、assistant 流式输出、执行中的工具调用）来自 Conversation 的 `chat` 目标：`uiConversation.binding(id).target('chat')` 的 `legacy` 切片；
+- 等待确认 / 提问来自 `uiSession.sessionStatus` 的 `pendingInteraction`（`approval` / `plan-review` / `question`）；
+- 点击会话改用 `uiWorkspace.openSession(id)`，不再调用已移除的 `sessions.open`。
+
+服务不可用时会自动降级（例如没有 `uiConversation` 时只显示状态、不显示正文），不会抛错。
+升级 Harness 后请重新安装本插件，确保拉到的是匹配当前客户端 API 的版本。
+
 ## 安装
 
 安装需要 Node.js 和 `pnpm`。如果已经全局安装 `dsh`，运行：
